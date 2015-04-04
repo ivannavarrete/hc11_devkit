@@ -6,7 +6,7 @@
 /* Opcode structure. The disasm module defines one structure for each opcode. */
 struct opcode {
 	char *opcode;		/* mnemonic */
-	short bytes;		/* number of bytes of instruction */
+	short bytes;		/* instruction size in bytes */
 	short cycles;		/* execution time in cycles */
 	int addr_mode;		/* addressing mode */
 	int operands;		/* number and bitwidth of operands */
@@ -16,11 +16,11 @@ struct opcode {
  * of instructions and passes back to caller. The caller desides what fields
  * to show. */
 struct dis_instr {
-	char addr[6];				/* address */
-	char mcode[15];				/* machine code */
-	char instr[40];				/* mnemonic and operands */
-	char bytes[4];
-	char cycles[4];
+	unsigned short addr;
+	char mcode[15];				/* machine code (ASCII, hope 14 is enough) */
+	char instr[40];				/* mnemonic and operands (also ASCII) */
+	unsigned short bytes;
+	unsigned short cycles;
 	struct dis_instr *next;
 };
 

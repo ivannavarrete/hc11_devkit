@@ -1,4 +1,10 @@
 
+/*
+ * ui_txt.c
+ *
+ * TODO: make a general GetAddr() routine.
+ */
+
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/ipc.h>
@@ -82,16 +88,23 @@ int GetCommand(struct cmd *cmd) {
 	cmdptr = cmdbuf;
 	token = strsep(&cmdptr, delim);
 	if (token[0]) {
-		if (!strcmp(token, "db")) {
-			cmd->cmd = CMD_DATA;
+		if (!strcmp(token, "d") || !strcmp(token, "db")) {
+			cmd->cmd = CMD_GET_DATA;
 			cmd->mod = CMD_DATA_B;
 		} else if (!strcmp(token, "dw")) {
-			cmd->cmd = CMD_DATA;
+			cmd->cmd = CMD_GET_DATA;
 			cmd->mod = CMD_DATA_W;
+		} else if (!strcmp(token, "bf")) {
+			cmd->cmd = CMD_SET_DATA;
+			cmd->mod = CMD_DATA_BF;
 		} else if (!strcmp(token, "c"))
-			cmd->cmd = CMD_CODE;
+			cmd->cmd = CMD_GET_CODE;
+		else if (!strcmp(token, "load"))
+			cmd->cmd = CMD_SET_CODE;
 		else if (!strcmp(token, "r"))
-			cmd->cmd = CMD_STATE;
+			cmd->cmd = CMD_GET_STATE;
+		else if (!strcmp(token, "g"))
+			cmd->cmd = CMD_EXEC;
 		else if (!strcmp(token, "cls"))
 			cmd->cmd = CMD_CLS;
 		else if (!strcmp(token, "quit") || !strcmp(token, "q"))
@@ -105,12 +118,14 @@ int GetCommand(struct cmd *cmd) {
 
 	/* ... then get command parameters where necessary */
 	switch (cmd->cmd) {
-		case CMD_DATA:
-		case CMD_CODE:
+		case CMD_GET_DATA:
+		case CMD_GET_CODE:
+		case CMD_EXEC:
 			token = strsep(&cmdptr, delim);		/* first addr is mandatory */
 			if (token[0]) {
 				cmd->addr1 = strtol(token, &end, 16);
-				if (*end != 0) cmd->cmd = CMD_SYNTAX_ERR;
+				if (*end != 0)
+					cmd->cmd = CMD_SYNTAX_ERR;
 			} else {
 				cmd->cmd = CMD_SYNTAX_ERR;
 				break;
@@ -119,17 +134,86 @@ int GetCommand(struct cmd *cmd) {
 			token = strsep(&cmdptr, delim);		/* second addr is optional */
 			if (token[0]) {
 				cmd->addr2 = strtol(token, &end, 16);
-				if (*end != 0) cmd->cmd = CMD_SYNTAX_ERR;
+				if (*end != 0)
+					cmd->cmd = CMD_SYNTAX_ERR;
 			}
 
+			break;
+		case CMD_SET_CODE:
+			token = strsep(&cmdptr, delim);		/* get filename */
+			if (token[0]) {
+				cmd->dsize = strlen(token) + 1;
+				cmd->data = malloc(cmd->dsize);
+				if (!cmd->data) {
+					perror(": GetCommand(): ");
+					return -1;
+				}
+				strcpy(cmd->data, token);
+			} else {
+				cmd->cmd = CMD_SYNTAX_ERR;
+				break;
+			}
+
+			break;
+		case CMD_SET_DATA:
+			if (cmd->mod == CMD_DATA_BF) {
+				token = strsep(&cmdptr, delim);	/* first addr is mandatory */
+				if (token[0]) {
+					cmd->addr1 = strtol(token, &end, 16);
+					if (*end != 0)
+						cmd->cmd = CMD_SYNTAX_ERR;
+				} else {
+					cmd->cmd = CMD_SYNTAX_ERR;
+					break;
+				}
+			
+				token = strsep(&cmdptr, delim);	/* second addr is mandatory */
+				if (token[0]) {
+					cmd->addr2 = strtol(token, &end, 16);
+					if (*end != 0)
+						cmd->cmd = CMD_SYNTAX_ERR;
+				} else {
+					cmd->cmd = CMD_SYNTAX_ERR;
+					break;
+				}
+
+				token = strsep(&cmdptr, delim);
+				if (token[0]) {
+					if (strlen(token) != 2) {
+						cmd->cmd = CMD_SYNTAX_ERR;
+						break;
+					}
+
+					cmd->dsize = cmd->addr2 - cmd->addr1 + 1;
+					cmd->data = malloc(cmd->dsize);
+					if (!cmd->data) {
+						perror(": GetCommand(): ");
+						return -1;
+					}
+
+					for (i=0; i<strlen(token); i++)
+						token[i] = toupper(token[i]);
+
+					i = GetHex(token[0])<<4 | GetHex(token[1]);
+					memset(cmd->data, i, cmd->dsize);
+				} else {
+					cmd->cmd = CMD_SYNTAX_ERR;
+					break;
+				}
+			}
+			
 			break;
 		case CMD_HELP:
 			token = strsep(&cmdptr, delim);
 			if (token[0]) {		/* get help on specific command */
 				if (!strcmp(token, "c"))
-					cmd->mod = CMD_CODE;
+					cmd->mod = CMD_GET_CODE;
 				else if (!strcmp(token, "db") || !strcmp(token, "dw"))
-					cmd->mod = CMD_DATA;
+					cmd->mod = CMD_GET_DATA;
+				else if (!strcmp(token, "bf"))
+					cmd->mod = CMD_DATA_BF;
+				else if (!strcmp(token, "g"))
+					cmd->mod = CMD_EXEC;
 				else if (!strcmp(token, "cls"))
 					cmd->mod = CMD_CLS;
 				else if (!strcmp(token, "help") || !strcmp(token, "h"))
@@ -145,37 +229,6 @@ int GetCommand(struct cmd *cmd) {
 			break;			/* only commands with no params end up here */
 	}
 
-
-
-//	if (!strcmp(cmdbuf, "c code on\n"))
-//		cmd->cmd = CMD_C_CODE_ON;
-//	else if (!strcmp(cmdbuf, "c code off\n"))
-//		cmd->cmd = CMD_C_CODE_OFF;
-//	else if (!strcmp(cmdbuf, "c bytes on\n"))
-//		cmd->cmd = CMD_C_BYTES_ON;
-//	else if (!strcmp(cmdbuf, "c bytes off\n"))
-//		cmd->cmd = CMD_C_BYTES_OFF;
-//	else if (!strcmp(cmdbuf, "c cycles on\n"))
-//		cmd->cmd = CMD_C_CYCLES_ON;
-//	else if (!strcmp(cmdbuf, "c cycles off\n"))
-//		cmd->cmd = CMD_C_CYCLES_OFF;
-//	else if (!strcmp(cmdbuf, "c mode\n"))
-//		cmd->cmd = CMD_DISASM_MODE;
-//	else if (!strcmp(cmdbuf, "c\n")) {		/* incomplete */
-//		cmd->cmd = CMD_CODE;
-//		cmd->addr1 = 0x0000;
-//		cmd->addr2 = 0x0100;
-//	} else if (!strcmp(cmdbuf, "cls\n"))
-//		cmd->cmd = CMD_CLS;
-//	else if (!strcmp(cmdbuf, "help\n"))		/* incomplete */
-//		cmd->cmd = CMD_HELP;
-//	else if (!strcmp(cmdbuf, "q\n") || !strcmp(cmdbuf, "quit\n"))
-//		cmd->cmd = CMD_QUIT;
-//	else if (!strcmp(cmdbuf, "\n"))			/* incomplete */
-//		cmd->cmd = CMD_NOP;
-//	else
-//		cmd->cmd = CMD_SYNTAX_ERR;
-	
 	return 0;
 }
 
@@ -183,10 +236,9 @@ int GetCommand(struct cmd *cmd) {
 /* Takes a request from main program to display command-specific output. */
 int ShowCommand(struct cmd *scmd) {
 	switch (scmd->cmd) {
-//		case CMD_DISASM_MODE: ShowDisasmMode(cmd); break;
-		case CMD_CODE: ShowCode(scmd); break;
-		case CMD_DATA: ShowData(scmd); break;
-		case CMD_STATE: ShowState(scmd); break;
+		case CMD_GET_CODE: ShowCode(scmd); break;
+		case CMD_GET_DATA: ShowData(scmd); break;
+		case CMD_GET_STATE: ShowState(scmd); break;
 		case CMD_HELP: Help(scmd); break;
 		case CMD_CLS: Cls(scmd); break;
 		case CMD_SYNTAX_ERR: SyntaxError(scmd); break;
@@ -324,10 +376,61 @@ int GetEnvOptions(struct mcu_env *env) {
 
 
 int ShowData(struct cmd *scmd) {
-	int i;
+	unsigned char *data = (unsigned char *)scmd->data;
+	int r, c;
 
-	for (i=0; i<scmd->dsize; i++)
-		printf("%02X ", ((char *)scmd->data)[i]);
+	for (r=0; r<(scmd->dsize)/0x10; r++)  {
+		/* address */
+		printf(": %04X:  ", (scmd->addr1+r*0x10) & 0xFFFF);
+
+		/* hex data */
+		if (scmd->mod == CMD_DATA_B) {
+			for (c=0; c<0x10; c++)
+				printf("%02X %s", data[r*0x10+c], (c==7) ? " ":"");
+		} else {
+			for (c=0; c<0x10; c+=2)
+				printf("%02X%02X  %s", data[r*0x10+c], data[r*0x10+c+1],
+						(c==6) ? " ":"");
+		}
+		printf("  ");
+
+		/* ascii data */
+		for (c=0; c<0x10; c++)
+			printf("%c", (data[r*0x10+c]>=0x20 && data[r*0x10+c]<='Z') ?
+					data[r*0x10+c] : '.');
+		printf("\n");
+
+		if (r%(ROWS-2) == 0 && r != 0) {
+			printf("press [enter] key to continue");
+			getchar();
+		}
+	}
+
+	/* This if statement prints out the last incomplete line (if any).
+	 * NOTE: Should incorporate it in the above loop instead. */
+	if ((scmd->dsize)%0x10) {
+		/* address */
+		printf(": %04X:  ", (scmd->addr1+r*0x10) & 0xFFFF);
+
+		/* hex data */
+		if (scmd->mod == CMD_DATA_B) {
+			for (c=0; c<(scmd->dsize)%0x10; c++)
+				printf("%02X %s", data[r*0x10+c], (c==7) ? " ":"");
+		} else {
+			for (c=0; c<(scmd->dsize)%0x10; c++)
+				printf("%02X%02X  %s", data[r*0x10+c], data[r*0x10+c+1],
+						(c==6) ? " ":"");
+		}
+
+		/* ascii data */
+		for (c=0; c<(0x10-(scmd->dsize)%0x10+1)*3; c++)
+			printf(" ");
+
+		for (c=0; c<(scmd->dsize)%0x10; c++)
+			printf("%c", (data[r*0x10+c]>=0x20 && data[r*0x10+c]<='Z') ?
+					data[r*0x10+c] : '.');
+		printf("\n");
+	}
 
 	return 0;
 }
@@ -346,24 +449,39 @@ int ShowState(struct cmd *scmd) {
 }
 
 
+/* Display disassembly output. */
 int ShowCode(struct cmd *scmd) {
 	struct dis_instr *da_list = (struct dis_instr *)scmd->data;
-	int i;
+	int i, j=2;
+
+	if (da_list != NULL)
+		printf("addr | machine code     |    mnemonic           |          byt"
+				"es | cycles\n"
+				"-----|------------------|-----------------------|------------"
+				"----|---------\n");
 
 	while (da_list != NULL) {
-		printf("%s", da_list->mcode);
-		for (i=strlen(da_list->mcode); i<15; i++)
+		printf("%04X:  ", da_list->addr);			/* address */
+	
+		printf("%s", da_list->mcode);				/* machine code */
+		for (i=strlen(da_list->mcode); i<22; i++)
 			printf(" ");
 
-		printf("%s", da_list->instr);
+		printf("%s", da_list->instr);				/* mnemonic */
 		for (i=strlen(da_list->instr); i<30; i++)
 			printf(" ");
 
-		printf("%s", da_list->bytes);
-		for (i=strlen(da_list->bytes); i<8; i++)
+		printf("%02d", da_list->bytes);				/* instruction size */
+		for (i=2; i<8; i++)
 			printf(" ");
 
-		printf("%s\n", da_list->cycles);
+		printf("%02d\n", da_list->cycles);			/* instruction time */
+
+		if (++j == ROWS-1) {
+			printf("press [enter] key to continue");
+			getchar();
+			j = 0;
+		}
 
 		da_list = da_list->next;
 	}
@@ -392,16 +510,25 @@ void SyntaxError(struct cmd *scmd) {
 /* Display help. */
 void Help(struct cmd *scmd) {
 	switch (scmd->mod) {
-		case CMD_CODE:
+		case CMD_GET_CODE:
 			printf(":\n:\tc <saddr> [eaddr]\n"
 				": Disassemble a piece of code with start address saddr and\n"
 				": end address eaddr. saddr is mandatory, eaddr is optional\n");
 			break;
-		case CMD_DATA:
+		case CMD_GET_DATA:
 			printf(":\n:\tdb <saddr> [eaddr]\n:\tdw <saddr> [eaddr]\n"
 				": Dump a data reqion starting at saddr and ending at eaddr.\n"
 				": saddr is mandatory, eaddr is optional. The data can be\n"
 				": is displayd either as bytes or words.\n");
+			break;
+		case CMD_DATA_BF:
+			printf(":\n:\tbf <saddr> <eaddr> <val>\n"
+				": Block fill a memory area with start address saddr and end\n"
+				": address eaddr, with the value val.\n");
+			break;
+		case CMD_EXEC:
+			printf(":\n:\tg <saddr>\n"
+				": Execute code starting at address saddr.\n");
 			break;
 		case CMD_CLS:
 			printf(":\n:\tcls\n: Clear display.\n");
@@ -420,29 +547,22 @@ void Help(struct cmd *scmd) {
 			printf(":\n: commands:\n"
 					":\tdb <saddr> [eaddr]             show data in bytes\n"
 					":\tdw <saddr> [eaddr]             show data in words\n"
+					":\tbf <saddr> <eaddr> <val>       block fill memory area\n"
 					":\tc <saddr> [eaddr]              disassemble code\n"
+					":\tg <saddr>                      execute code\n"
 					":\tcls                            clear display\n"
 					":\thelp [command]                 show help on commands\n"
 					":\tquit                           exit program\n");
 	}
-
-	//printf(""
-		//	"\tc code on\n"
-		//	"\tc code off\n"
-		//	"\tc bytes on\n"
-		//	"\tc bytes off\n"
-		//	"\tc cycles on\n"
-		//	"\tc cycles off\n"
-		//	"\tc mode\n"
 }
 
 
 /* Clear command screen. */
 void Cls(struct cmd *scmd) {
-	printf(":\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n"
-			":\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n"
-			":\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n"
-			":\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n:\n");
+	int i;
+
+	for (i=0; i<ROWS; i++)
+		printf(":\n");
 }
 
 
@@ -450,9 +570,11 @@ void Cls(struct cmd *scmd) {
  * (0x0-0xF). */
 char GetHex(char c) {
 	c -= 0x30;
-	if (c>=0 && c<=9) return c;
+	if (c>=0 && c<=9)
+		return c;
 	c -= 7;
-	if (c>=0xA && c<=0xF) return c;
+	if (c>=0xA && c<=0xF)
+		return c;
 
 	return -1;
 }

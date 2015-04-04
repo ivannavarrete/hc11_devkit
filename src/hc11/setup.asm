@@ -20,9 +20,9 @@ HPRIO		equ		$003C
 INIT		equ		$003D
 CONFIG		equ		$003F
 
-talker_s	equ		$0100		; start offset of talker in page
-talker_sz	equ		$1EFF		; talker size
-talker_e	equ		$1FFF		; end offset of talker
+talker_s	equ		$E100		; start offset of talker in page
+talker_sz	equ		$1EBF		; talker size
+talker_e	equ		$FFBF		; end offset of talker
 
 
 ;		opt l,c
@@ -30,29 +30,6 @@ talker_e	equ		$1FFF		; end offset of talker
 		org $0000
 start:	lds		#$00F0
 		ldx		#$1000
-		
-		; enable/disable on-chip ROM and EEPROM
-		; <<< this code is disabled until a way to reboot the MCU is found >>>
-;		jsr		dly10			; allow charge pump to stabilize
-;		ldaa	CONFIG,X
-;		ora		#$03
-;		ldab	options3
-;		cba
-;		beq		next0
-;		ldaa	#$06		; erase CONFIG register
-;		staa	PPROG,X
-;		staa	CONFIG,X
-;		inca
-;		staa	PPROG,X
-;		jsr		dly10
-;		ldaa	#$02		; program CONFIG register
-;		staa	PPROG,X
-;		stab	CONFIG,X
-;		inca
-;		staa	PPROG,X
-;		jsr		dly10
-;		clr		PPROG,X		; turn off charge pump
-		; <<< reboot somehow >>>
 
 		; enable/disable bootstrap ROM
 next0:	brset	options3 #$02 next1
@@ -109,7 +86,7 @@ smod:
 		; change baud rate to 9600bps
 		ldaa	#$30
 		staa	BAUD,X
-		
+
 		; set up interrupt vectors at $FFC0-$FFFF
 		; MUST SWITCH TO EXPANDED MODE FIRST, ST00PID!
 		ldy		#$FFC0
@@ -119,39 +96,35 @@ smod:
 i_recv:	brclr	SCSR,X #$20 *	; wait for byte to arrive
 		ldaa	SCDR,X			; read byte
 		staa	0,Y				; store byte
-		staa	SCDR,X			; echo byte
+		;staa	SCDR,X			; echo byte
 		iny
 		bne		i_recv
 
 		; download talker
-		ldaa	options5		; Y = talker addr
-		anda	#$F0
-		clrb
-		addd	#talker_e
-		std		talker_end
-		subd	#talker_sz
-		xgdy
-
+		ldy		#talker_s
+		
 		bset	SCCR2,X #$01	; send break
 		brset	PORTD,X #$01 *
 		bclr	SCCR2,X #$01	; clear break
 t_recv:	brclr	SCSR,X #$20 *
 		ldaa	SCDR,X			; read byte
 		staa	0,Y
-		staa	SCDR,X			; echo byte
+		;staa	SCDR,X			; echo byte
 		iny
-		cpy		talker_end
+		cpy		#talker_e
 		bne		t_recv
 
 		; pass control to the talker
-		jmp		talker
+		; we must also set Y to point to the right memory page
+		jmp		#talker_s
+
 
 ; Subroutine to delay for 10ms (if E=2Mhz)
-dly10:	pshx
-		ldx		#$0D06			; 3334*6*500ns = 10ms
-dloop:	dex
-		bne		dloop
-		pulx
+dly10:	pshy
+		ldy		#$0D06			; 3334*6*500ns = 10ms
+dloop:	dey
+;		bne		dloop
+		puly
 		rts
 
 ; Debug routine. Outputs ones on PORTA. Connect a LED to pin 7 of PORTA and
@@ -170,7 +143,6 @@ debug:	bset	PACTL,X #$80
 
 talker_end:		fcb 0,0
 
-
 ; User selected options. Theese are setup by the Control program before this
 ; program is downloaded to the MCU. Use several option bytes to avoid shifting
 ; and ANDing operations in the setup code. Saves time and memory.
@@ -187,7 +159,7 @@ options5:	fcb 0
 options4:	fcb 0
 
 ; b0:	on-chip EEPROM at $B600-$B7FF (0=disable, 1=enable)
-; b1:	on-chip bootstrap ROM at $E000-$FFFF ??? (0=disable, 1=enable)
+; b1:	on-chip ROM at $E000-$FFFF ??? (0=disable, 1=enable)
 ; b2:7	reserved
 options3:	fcb 0
 
@@ -205,9 +177,3 @@ options1:	fcb 0
 ; b1:	COP timer rate select (CR1)
 ; b2:7	reserved
 options0:	fcb 0
-
-
-
-; Downloaded talker code starts here
-		org $0100
-talker:

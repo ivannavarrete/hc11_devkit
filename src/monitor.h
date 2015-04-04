@@ -35,20 +35,8 @@ struct packet {
 };
 
 
-struct token {
-	unsigned int token;
-	unsigned int rnd;
-	unsigned int csum;
-};
-
-
-#define CMD_HW_NOP			0
-#define CMD_HW_GET_DATA		1
-#define CMD_HW_SET_DATA		2
-#define CMD_HW_BLOCK_FILL	3
-#define CMD_HW_GET_STATE	4
-#define CMD_HW_SET_STATE	5
-#define CMD_HW_EXEC_CODE	6
+#define CMD_HW_OK			98
+#define CMD_HW_ERR			99
 
 
 

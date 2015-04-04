@@ -1,8 +1,10 @@
 
 ;	opt l,c
 
+; The X index register must always point at register base address. Do not
+; change it.
 
-;=== equates =================================================
+;=== equates ===================================================================
 ; MCU registers
 PORTD		equ	$0008
 DDRD		equ	$0009
@@ -11,58 +13,33 @@ SCCR1		equ	$002C
 SCCR2		equ	$002D
 SCSR		equ	$002E
 SCDR		equ	$002F
+CONFIG		equ	$003F
 
 
-;=== Interrupt vectors =======================================
-	org $0000
-vec1:		fcb	$11,$11
-vec2:		fcb	00,00
-vec3:		fcb	00,00
-vec4:		fcb	00,00
-vec5:		fcb	00,00
-vec6:		fcb	00,00
-vec7:		fcb	00,00
-vec8:		fcb	00,00
-vec9:		fcb	00,00
-vec10:		fcb	00,00
-vec11:		fcb	00,00
-vec12:		fcb	00,00
-vec13:		fcb	00,00
-vec14:		fcb	00,00
-vec15:		fcb	00,00
-vec16:		fcb	00,00
-vec17:		fcb	00,00
-vec18:		fcb	00,00
-vec19:		fcb	00,00
-vec20:		fcb	00,00
-vec21:		fcb	00,00
-vec22:		fcb	00,00
-vec23:		fcb	00,00
-vec24:		fcb	00,00
-vec25:		fcb	00,00
-vec26:		fcb	00,00
-vec27:		fcb	00,00
-vec28:		fcb	00,00
-vec29:		fcb	00,00
-vec30:		fcb	00,00
-vec31:		fcb	00,00
-vec32:		fcb	$FF,$FF
+; this is needed to properly parse the file
+	org $E000
+	zmb	$FF
 
 
-;=== monitor initialization =============================
-	org $0100
+; The monitor must start at offset 100 from a page, so we can have monitor and
+; registers (and RAM, when RAM is less than 256 bytes) at the same page.
+	org $E100
+;=== monitor initialization ====================================================
 init:
 		stx		regbase
-		lds		#monitor_stack
+		lds		#mon_stack
+		jsr		sci_init
 
-
-;=== main routine =======================================
+;=== main routine ==============================================================
 main:
 		; get command from PC
+		ldd		#packet_data
+		std		packet_data_ptr
 		jsr		recv_packet
+
 		; jump to command routine
 		ldy		#jmp_table
-		ldab	_packet_cmd
+		ldab	m_packet+_packet_cmd
 		lslb
 		aby
 		ldy		0,Y
@@ -70,6 +47,7 @@ main:
 		; get next command
 		jmp		main				
 
+		; don't change the jump table order
 max_cmd			equ	6
 jmp_table:
 		fdb		cmd_nop
@@ -78,193 +56,278 @@ jmp_table:
 		fdb		cmd_block_fill
 		fdb		cmd_get_state
 		fdb		cmd_set_state
-		fdb		cmd_exec_code
+		fdb		cmd_exec
 		fdb		cmd_err
 
 
-;=== get packet routine ================================
+;=== recv_packet ===============================================================
+; input:
+;	packet_data_ptr		points to where to store packet data
+; output:
+;	m_packet			received packet header
+;	packet_data_ptr		packet data stored at pointer location
+;===============================================================================
 recv_packet:
 		psha
 		pshb
-		pshx
 		pshy
 		
-		; get packet header
-		bset	SCCR2,X #$01		; send break and wait for start bit
-		brset	PORTD,X #$01 *
-		bclr	SCCR2,X #$01 
-_recv0:	ldy		#_packet_id			; first find 'MCP' in incoming byte stream
-_recv1:	brclr	SCSR,X #$20 *
-		ldaa	SCDR,X
-		staa	SCDR,X
-		cmpa	0,Y
-		bne		_recv0
-		iny
-		cpy		#_packet_id+3
-		bne		_recv1
-
-_recv2:	brclr	SCSR,X #$20 *		; then get rest of packet header
+_recv0:	ldy		#m_packet
+_recv1:	brclr	SCSR,X #$20 *		; get packet header
 		ldaa	SCDR,X
 		staa	0,Y
 		iny
-		cpy		#_packet_data
-		bne		_recv2
+		cpy		#m_packet+#packet_hdr_size
+		bne		_recv1
 
-		; get packet data
-		ldd		#_packet_data
-		addd	_packet_size
-		std		tmp1
-		ldy		#_packet_data
-_recv3:	cpy		tmp1
-		beq		_recvd
+		ldd		m_packet+_packet_size		; get packet data
+		beq		_csum
+		ldy		packet_data_ptr
+_recv2:	std		packet_size_tmp
 		brclr	SCSR,X #$20 *
 		ldaa	SCDR,X
 		staa	0,Y
 		iny
-		bra		_recv3
+		ldd		packet_size_tmp
+		subd	#$0001
+		bne		_recv2
 
-		; check packet for errors
-_recvd:	jsr		do_csum
-		;cpy		packet_hdr+6
+_csum:	ldaa	#cmd_hw_ok			; determine if packet is ok
+		staa	c_packet+_packet_cmd
+		ldy		#m_packet
+		jsr		csum
+		cpd		m_packet+_packet_csum
+		beq		_reply
+		ldaa	#cmd_hw_err
+		staa	c_packet+_packet_cmd
 
-		; exit with a valid command
-		ldaa	#max_cmd
-		cmpa	_packet_cmd
-		bgt		_exit1
-		staa	_packet_cmd
-		
-_exit1:	puly
-		pulx
+_reply:	ldy		#c_packet
+		jsr		send_packet			; send a response to PC based on csum
+
+		cmpa	cmd_hw_err			; if error, try again
+		beq		_recv0
+
+		puly
 		pulb
 		pula
 		rts
 
 
-;=== send packet routine =====================================
+;=== send_packet ===============================================================
+; input:
+;	Y		packet pointer
+;===============================================================================
 send_packet:
 		psha
 		pshb
-		pshx
 		pshy
-		
-		; send packet header
-		ldy		#packet_hdr
-_send0:	ldaa	0,Y
-		cpy		#packet_hdr+8
-		beq		_send1
+
+		jsr		csum				; insert csum into packet
+		std		_packet_csum,Y
+
+		pshy
+		pula
+		pulb
+		addd	#packet_hdr_size
+		std		packet_hdr_e		; D points to packet header end
+		sty		packet_hdr_s		; Y points to packet header start
+
+_send0:	ldaa	0,Y					; send packet header
 		brclr	SCSR,X #$80 *
 		staa	SCDR,X
 		iny
-		bra		_send0
+		cpy		packet_hdr_e
+		bne		_send0
 
-		; send packet data
-_send1:	ldd		#$100
-		addd	_packet_size
-		std		tmp1
-		ldy		#$100
-_send2:	ldaa	0,Y
-		cpy		tmp1
-		beq		_exit2
+		ldy		packet_hdr_s		; send packet data
+		ldd		_packet_size,Y
+		beq		_done				; if data size = 0, then send nothing more
+		ldy		packet_data_ptr		; command routines set up packet_data_ptr
+_send1:	std		packet_size_tmp
+		ldaa	0,Y
 		brclr	SCSR,X #$80 *
-		staa	SCDR,X
+		staa	SCDR,X				; send one byte
 		iny
-		bra		_send2
+		ldd		packet_size_tmp
+		subd	#$0001
+		bne		_send1
 
-_exit2:	puly
-		pulx
+_done:	puly
 		pulb
 		pula
 		rts
 
 
-;=== checksum routine =========================================
-; Calculate checksum on packet in packet buffer.
-; Return checksum in Y.
-do_csum:
+;=== csum ======================================================================
+; Calculate checksum on packet in packet buffer. Old csum is counted as zero.
+;
+;	short csum = 0;
+;	for (i=packet_hdr+packet_hdr_size+*(packet_size)-2; i>=packet_hdr; i--)
+;		csum += packet_hdr[i];
+;
+; input:
+;	Y		packet pointer
+; output:
+;	D		packet checksum
+;===============================================================================
+csum:
+		pshx
+
+		ldx		_packet_csum,Y		; save and zero old csum
+		pshx
+		ldd		#$0000
+		std		_packet_csum,Y
+
+		dey
+		sty		packet_hdr_s		; Y=last byte - 2, D=0
+		ldd		packet_hdr_s
+		addd	#packet_hdr_size-1
+		addd	_packet_size+1,Y
+		xgdy
+		clra
+		clrb
+
+_csum0:	addd	0,Y					; calculate csum
+		dey
+		cpy		packet_hdr_s
+		bne		_csum0
+		iny
+		
+		pulx						; restore old csum
+		stx		_packet_csum,Y
+
+		pulx
 		rts
 
 
-;=== reset routine ============================================
-reset:
-		ldx		regbase
-		lds		#monitor_stack
-		jmp		main
+;=== sci_init ==================================================================
+sci_init:
+		psha
 
-
-;=== SPI initialization =======================================
-spi_init:
-		bclr	SCCR2,X #$FF		; disable everything
+		clr		SCCR2,X				; disable everything
 		ldaa	#$30				; 9600bps
 		staa	BAUD,X
-		bclr	SCCR1,X #$18		; 1 start, 8 data, 1 stop,
+		clr		SCCR1,X				; 1 start, 8 data, 1 stop,
 		bset	SCCR2,X #$0C		; enable receiver and transmitter
+
+		ldaa	SCSR,X				; clear status
+		ldaa	SCDR,X
+		
+		pula
 		rts
 
 
-;=== command routines =========================================
-;=== cmd_nop ===
+;=== dly =======================================================================
+dly:	pshx
+		ldx		#$FFFF
+_dly0:	dex
+		bne		_dly0
+		pulx
+		rts
+	
+
+;*******************************************************************************
+;*** command routines **********************************************************
+;*******************************************************************************
+;=== cmd_nop ===================================================================
 cmd_nop:
 		ldaa	#$FF
 		jsr		debug_ac
 		rts
 
 
-;=== cmd_get_data ===
+;=== cmd_get_data ==============================================================
 cmd_get_data:
 		ldaa	#$01
 		jsr		debug_ac
 
-		; send packet
-		ldd		#$100
-		std		_packet_size
+		; parse packet data
+		ldd		packet_data+2			; ntohs() should be done at PC side
+		stab	packet_data+2			; addr1
+		staa	packet_data+3
+		
+		ldd		packet_data+4
+		stab	packet_data+4			; addr2
+		staa	packet_data+5
+
+		ldd		packet_data+4			; calculate packet size
+		bne		_l10
+		ldd		#$20
+		bra		_l20
+_l10:	subd	packet_data+2
+_l20:	std		m_packet+_packet_size	; put size into main packet
+		ldd		packet_data+2
+		std		packet_data_ptr			; set up data pointer
+
+		ldy		#m_packet
 		jsr		send_packet
 
 		rts
 
 
-;=== cmd_set_data ===
+;=== cmd_set_data ==============================================================
 cmd_set_data:
 		ldaa	#$02
 		jsr		debug_ac
+
+		ldd		packet_data+2			; ntohs() should be done at PC side
+		stab	packet_data+2			; addr1
+		staa	packet_data+3
+
+		ldd		packet_data+2
+		std		packet_data_ptr
+
+		jsr		recv_packet
+		
 		rts
 
 
-;=== cmd_block_fill ===
+;=== cmd_block_fill ============================================================
 cmd_block_fill:
 		ldaa	#$03
 		jsr		debug_ac
 		rts
 
 
-;=== cmd_get_state ===
+;=== cmd_get_state =============================================================
 cmd_get_state:
 		ldaa	#$04
 		jsr		debug_ac
 		rts
 
 
-;=== cmd_set_state ===
+;=== cmd_set_state =============================================================
 cmd_set_state:
 		ldaa	#$05
 		jsr		debug_ac
 		rts
 
 
-;=== cmd_exec_code ===
-cmd_exec_code:
+;=== cmd_exec ==================================================================
+cmd_exec:
 		ldaa	#$06
 		jsr		debug_ac
+
+		ldd		packet_data+2
+		stab	packet_data+2
+		staa	packet_data+3
+		ldy		packet_data+2
+
+		jmp		0,Y
+		
 		rts
 
 
-;=== cmd_err ===
+;=== cmd_err ===================================================================
 cmd_err:
 		ldaa	#$FE
 		jsr		debug_ac
 		rts
 
 
-;=== debug routines ===========================================
+;*******************************************************************************
+;*** debug routines ************************************************************
+;*******************************************************************************
 ; Output one to bit 7 on PORTA and hang.
 PORTA		equ	$0000
 PACTL		equ	$0026
@@ -299,41 +362,86 @@ debug_a:
 		rts
 
 
-;=== monitor data area ========================================
-regbase:		rmb	2				; register base
-rambase:		rmb 2				; internal RAM base
-
-token:			rmb 1				; communication token
+;*******************************************************************************
+;*** monitor data area *********************************************************
+;*******************************************************************************
+regbase:			rmb	2			; register base
+rambase:			rmb 2			; on-chip RAM base
 
 ; saved MCU state
 mcu_state:
-_mcu_AccA:		rmb 1
-_mcu_AccB:		rmb	1
-_mcu_X:			rmb	2
-_mcu_Y:			rmb	2
-_mcu_SP:		rmb	2
-_mcu_PC:		rmb	2
-_mcu_flags:		rmb	1
+_mcu_AccA:			rmb 1
+_mcu_AccB:			rmb	1
+_mcu_X:				rmb	2
+_mcu_Y:				rmb	2
+_mcu_SP:			rmb	2
+_mcu_PC:			rmb	2
+_mcu_flags:			rmb	1
 
-; packet buffer
-packet_hdr:
-_packet_id:		fcb	'M,'C,'P		; packet header (8 bytes)
-_packet_cmd:	rmb	1
-_packet_size:	rmb	2
-_packet_csum:	rmb	2
-_packet_data:	fcb 'H','A','H','A'
-				rmb	256				; packet data (0-256 bytes)
+; packet variables
+packet_hdr_size:	equ	8
+_packet_id:			equ 0 
+_packet_cmd:		equ	3
+_packet_size:		equ	4
+_packet_csum:		equ	6
+
+m_packet:			fcb	'M,'C,'P, 0, 0,0, 0,0	; main packet
+c_packet:			fcb	'M,'C,'P, 0, 0,0, 0,0	; confirmation packet
+
+packet_data:		rmb	256			; packet data buffer
+packet_data_ptr:	rmb 2			; pointer to packet data
+
+; packet commands
+cmd_hw_ok:			equ	98
+cmd_hw_err:			equ	99
+
 
 ; temp variables
-tmp1:			rmb 2
+packet_size_tmp:	rmb 2
+packet_csum_tmp:	rmb	2
+packet_hdr_s:		rmb	2
+packet_hdr_e:		rmb	2
 
 ; start of monitor stack.
-	org $1FFC
-monitor_stack:
+	org $FFBE
+mon_stack:
 
 
-;=== end-of-monitor mark ======================================
-	org $1FFE
-	fcb	$55,$AA
-	org $1FFF
+;*******************************************************************************
+;*** interrupt vectors *********************************************************
+;*******************************************************************************
+	org $FFC0
+res1:				fcb	$11,$11
+res2:				fcb	00,00
+res3:				fcb	00,00
+res4:				fcb	00,00
+res5:				fcb	00,00
+res6:				fcb	00,00
+res7:				fcb	00,00
+res8:				fcb 00,00
+res9:				fcb 00,00
+res10:				fcb 00,00
+res11:				fcb 00,00
+v_sci:				fcb	00,00
+v_spi_done:			fcb	00,00
+v_pa_inedge:		fcb	00,00
+v_pa_owrflow:		fcb	00,00
+v_t_ovrflow:		fcb	00,00
+v_tic4_tok5:		fcb	00,00
+v_tok4:				fcb	00,00
+v_tok3:				fcb	00,00
+v_tok2:				fcb	00,00
+v_tok1:				fcb	00,00
+v_tic3:				fcb	00,00
+v_tic2:				fcb	00,00
+v_tic1:				fcb	00,00
+v_rti:				fcb	00,00
+v_irq:				fcb	00,00
+v_xirq:				fcb	00,00
+v_softint:			fcb	00,00
+v_ill_opcode:		fcb	00,00
+v_cop_fail:			fcb	00,00
+v_clk_fail:			fcb	00,00
+v_reset:			fcb	$FF,$FF
+
 end:

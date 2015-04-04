@@ -4,6 +4,15 @@
  * communication interface between PC and HC11 changes. Only the monitor.c
  * and main.c modules should use the functions in this module.
  *
+ * main.c uses InitComm(), ConfigComm() and CleanupComm().
+ * monitor.c uses SendData() and RecvData().
+ *
+ * TODO: ConfigComm doesn't work properly. I currently start up minicom so it
+ * configures the serial port and then exit without reset. Check the minicom
+ * source..
+ * Note: baud rate selection in ConfigComm seem to work, so ther's probably
+ * a problem in the data format.
+ *
  * public routines:
  * 		InitComm() sets up the communication interface on the PC side.
  *		ConfigComm() reconfigures the communication interface.
@@ -23,6 +32,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "serial.h"
 
@@ -34,6 +44,7 @@ int RestoreComm(void);
 int ConfigComm(int baud);
 int SendData(const unsigned char *buf, int length);
 int RecvData(unsigned char *buf, int length);
+int FlushDev(void);
 
 int DebugGetSpeed(speed_t speed);		/* debug routine */
 
@@ -46,9 +57,12 @@ int baud = 1200;						/* default initial interface speed */
 
 int InitComm(void) {
 	dev = open(iface, O_RDWR | O_SYNC);
-	if (dev == -1) return -1;
-	if (SaveComm()) return -1;
-	if (ConfigComm(baud)) return -1;
+	if (dev == -1)
+		return -1;
+	if (SaveComm())
+		return -1;
+	if (ConfigComm(baud))
+		return -1;
 
 	return dev;
 }
@@ -103,39 +117,50 @@ int ConfigComm(int baud) {
 }
 
 
-int SendData(const unsigned char *buf, int length, int s) {
+int SendData(const unsigned char *buf, int length) {
 	int res;
-	unsigned char b1, b2;
 	int i;
 
-	for (i=5, b1=0xAA; i>0; i--) {
-		/* first we check if the other side is listening */
-		write(dev, &b1, 1);
-		read(dev, &b2, 1);
-
-		/* if it does, send the packet */
-		if (b2 == b1 ^ 0xFF) {
-			for (i=res=0; i<length; i+=res) {
-				res = write(dev, buf+i, length-i);
-				if (res == -1) return -1;
-			}
-			break;
-		/* if it doesn't, sleep for a while and try again */
-		} else
-			sleep(1);
+	for (i=res=0; i<length; i+=res) {
+		res = write(dev, buf+i, length-i);
+		if (res == -1) {
+			perror(": SendData(): ");
+			return -1;
+		}
 	}
-	
-	if (!i) return -1;
+
 	return 0;
 }
 
 
-/* not implemented */
 int RecvData(unsigned char *buf, int length) {
-	printf("l: %d\n", length);
-	read(dev, buf, length);
+	int res;
+	int i;
+
+	for (i=res=0; i<length; i+=res) {
+		res = read(dev, buf+i, length-i);
+		if (res == -1) {
+			perror(": RecvData(): ");
+			return -1;
+		}
+	}
 
 	return 0;
+}
+
+
+/* Find a better way to flush the device */
+int FlushDev(void) {
+	int res;
+	char c;
+	
+	fcntl(dev, F_SETFL, O_NONBLOCK);
+	do {
+		res = read(dev, &c, 1);
+	} while (res != 0 && res != -1);
+	fcntl(dev, F_SETFL, ~O_NONBLOCK);
+
+	return res;
 }
 
 

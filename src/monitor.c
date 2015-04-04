@@ -23,6 +23,7 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include <netinet/in.h>			/* htons() */
 
 #include "monitor.h"
 #include "sfile.h"
@@ -34,6 +35,7 @@ struct packet *CreatePacket(int data_size);
 int DestroyPacket(struct packet *p);
 int SendPacket(struct packet *p);
 struct packet *RecvPacket(void);
+int Csum(struct packet *p);
 
 /* sfile.c */
 extern int ParseSFile(char *file, char *buf, int options);
@@ -41,6 +43,7 @@ extern int ParseSFile(char *file, char *buf, int options);
 extern int ConfigComm(int baud);
 extern int SendData(const unsigned char *buf, int len);
 extern int RecvData(unsigned char *buf, int len);
+extern int FlushDev(void);
 /* ui*.c */
 extern int GetEnvOptions(struct mcu_env *env);
 
@@ -61,9 +64,6 @@ struct mcu_env env = {
 	0,					/* irq pin is level triggered */
 	1					/* osc delay enabled */
 };
-
-//struct token tok = { 1, 0x55AA55AA, 0xAA55AA55 };
-int r;
 
 
 /* Install the monitor at the hw end. */
@@ -87,10 +87,11 @@ int InstallMonitor() {
 	send_buf = realloc(send_buf, 0x2000);
 	if (send_buf == NULL) return -1;
 	ParseSFile("./hc11/monitor.s19", send_buf, SFILE_UNCOMPRESSED);
-	SendData(send_buf, 0x40);
-	SendData(send_buf+0x100, 0x1EFF);
+	SendData(send_buf+0x1FC0, 0x40);
+	SendData(send_buf+0x100, 0x1EBF);
 
 	free(send_buf);
+	FlushDev();
 	return 0;
 }
 
@@ -113,15 +114,19 @@ int ConfigEnvOptions(void) {
 }
 
 
+/* Allocate memory for a packet and fill in the fields that are known. */
 struct packet *CreatePacket(int data_size) {
 	struct packet *p;
 	
 	p = malloc(sizeof(struct packet) + data_size);
-	if (p == NULL) return p;
+	if (p == NULL)
+		return p;
 
 	p->id[0] = 'M';
 	p->id[1] = 'C';
 	p->id[2] = 'P';
+	p->size = data_size;
+
 	return p;
 }
 
@@ -133,25 +138,91 @@ int DestroyPacket(struct packet *p) {
 
 
 int SendPacket(struct packet *p) {
-	SendData((unsigned char *)p, PACKET_HDR_SIZE + p->size);
+	unsigned short csum;
+//	int i;
+
+	p->csum = Csum(p);
+
+/*
+	printf("SendPacket()\nsending command:        ");
+	for (i=0; i<PACKET_HDR_SIZE+p->size; i++)
+		printf("%02X ", ((unsigned char *)p)[i]);
+	printf("\n");
+*/
+
+	p->size = htons(p->size);		/* convert size field */
+	SendData((unsigned char *)p, PACKET_HDR_SIZE + ntohs(p->size));
+	RecvData((unsigned char *)p, PACKET_HDR_SIZE);
+	csum = Csum(p);
+
+/*
+	printf("receiving confirmation: ");
+	for (i=0; i<PACKET_HDR_SIZE+ntohs(p->size); i++)
+		printf("%02X ", ((unsigned char *)p)[i]);
+	printf("\n");
+*/
+	if (csum == p->csum)
+//		printf("packet ok\n\n");
+	;
+	else
+		printf("packet error\n\n");
+
+
 	return 0;
 }
 
 
 struct packet *RecvPacket(void) {
 	struct packet *p;
-	//unsigned char launch[] = {0x55, 0xAA};
+//	int i;
 
 	p = malloc(PACKET_HDR_SIZE);
+
+	if (RecvData((unsigned char *)p, PACKET_HDR_SIZE) == -1) {
+		DestroyPacket(p);
+		return NULL;
+	}
 	
-	/* tell HC11 to start transmission of header */
-	//SendData(launch, 2);
-	RecvData((unsigned char *)p, PACKET_HDR_SIZE);
+	p->size = ntohs(p->size);
+
+/*
+	printf("RecvPacket()\nreceiving packet hdr:  ");
+	for (i=0; i<PACKET_HDR_SIZE; i++)
+		printf("%02X ", ((unsigned char *)p)[i]);
+	printf("\n");
+*/
+	
 	/* resize packet to make room for incoming packet data */
 	p = realloc(p, PACKET_HDR_SIZE + p->size);
+
 	/* receive rest of packet */
-	//SendData(launch, 2);
-	RecvData((unsigned char *)p + PACKET_HDR_SIZE, p->size);
-	
+	if (RecvData((unsigned char *)p + PACKET_HDR_SIZE, p->size) == -1) {
+		DestroyPacket(p);
+		return NULL;
+	}
+
+/*
+	printf("receiving packet data: ");
+	for (i=0; i<(p->size)%8; i++)
+		printf("%02X ", ((unsigned char *)p)[PACKET_HDR_SIZE+i]);
+	printf("\n");
+*/
+
 	return p;
+}
+
+
+/* Calculate checksum, on packet header only. */
+int Csum(struct packet *p) {
+	unsigned short csum, csum_tmp;
+	int i;
+
+	csum_tmp = p->csum;
+	p->csum = 0;
+
+	for (i=csum=0; i<=PACKET_HDR_SIZE-2+p->size; i++)
+		csum += (((char *)p)[i])<<8 | ((char *)p)[i+1];
+	
+	p->csum = csum_tmp;
+	return htons(csum);
 }

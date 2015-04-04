@@ -6,11 +6,6 @@ MAKE = make
 OBJFILES = serial.o sfile.o monitor.o disasm.o ui_txt.o main.o
 
 all: $(OBJFILES)
-	gcc $(OBJFILES) -o devsys
-	@cd ./hc11; $(MAKE) all;
-
-
-debug: $(OBJFILES)
 	gcc $(CFLAGS) $(OBJFILES) -o devsys
 	@cd ./hc11; $(MAKE) all;
 

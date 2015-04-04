@@ -1,4 +1,8 @@
 
+/*
+ * main.c
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -28,13 +32,16 @@ void SigDef(int signum);
 
 //void CmdCChangeMode(int mode, int on);
 //void CmdCShowMode(void);
-void CmdCode(struct cmd *gcmd);
-void CmdData(struct cmd *gcmd);
-void CmdState(struct cmd *gcmd);
-void CmdCls(struct cmd *gcmd);
-void CmdHelp(struct cmd *gcmd);
-void CmdQuit(struct cmd *gcmd);
-void CmdSyntaxErr(struct cmd *gcmd);
+void CmdGetCode(struct cmd *cmd);
+void CmdSetCode(struct cmd *cmd);
+void CmdGetData(struct cmd *cmd);
+void CmdSetData(struct cmd *cmd);
+void CmdGetState(struct cmd *cmd);
+void CmdExec(struct cmd *cmd);
+void CmdCls(struct cmd *cmd);
+void CmdHelp(struct cmd *cmd);
+void CmdQuit(struct cmd *cmd);
+void CmdSyntaxErr(struct cmd *cmd);
 
 /* serial.c */
 extern int InitComm(void);
@@ -46,7 +53,7 @@ extern int DestroyPacket(struct packet *p);
 extern int SendPacket(struct packet *p);
 extern struct packet *RecvPacket(void);
 /* disasm.c */
-extern struct dis_instr *CreateDisasm(unsigned char *code, int len);
+extern struct dis_instr *CreateDisasm(unsigned short addr, unsigned char *code, int len);
 extern int DestroyDisasm(struct dis_instr *da_list);
 /* ui*.c */
 extern int InitUI(void);
@@ -57,34 +64,31 @@ extern int ShowCommand(struct cmd *cmd);
 
 int disasm_mode;			/* disassembly output mode */
 
-struct cmd gcmd;			/* message struct, UI->main */
-struct cmd scmd;			/* message struct, main->UI */
-/* send and receive packet structs, for communication with hw */
-struct packet *sp, *rp;
+struct cmd cmd;				/* message struct for UI<-->main communication */
+struct packet *sp, *rp;		/* packets for main<-->hc11 communication */
 
 
 void main(int argc, char **argv) {
-	if (Init() == -1) Error("Init()");
+	if (Init() == -1)
+		Error("Init()");
 
 	/* command loop */
 	do {
-		GetCommand(&gcmd);		/* get command */
+		memset(&cmd, 0, sizeof(struct cmd));
+		if (GetCommand(&cmd) == -1)		/* get command */
+			continue;					/* handle errors in UI module */
 
-		switch (gcmd.cmd) {		/* execute command */
-	//		case CMD_C_CODE_ON: CmdCChangeMode(DMODE_CODE, 1); break;
-	//		case CMD_C_CODE_OFF: CmdCChangeMode(DMODE_CODE, 0); break;
-	//		case CMD_C_BYTES_ON: CmdCChangeMode(DMODE_BYTES, 1); break;
-	//		case CMD_C_BYTES_OFF: CmdCChangeMode(DMODE_BYTES, 0); break;
-	//		case CMD_C_CYCLES_ON: CmdCChangeMode(DMODE_CYCLES, 1); break;
-	//		case CMD_C_CYCLES_OFF: CmdCChangeMode(DMODE_CYCLES, 0); break;
-	//		case CMD_DISASM_MODE: CmdCShowMode(); break;
-			case CMD_CODE: CmdCode(&gcmd); break;
-			case CMD_DATA: CmdData(&gcmd); break;
-			case CMD_STATE: CmdState(&gcmd); break;
-			case CMD_CLS: CmdCls(&gcmd); break;
-			case CMD_HELP: CmdHelp(&gcmd); break;
-			case CMD_QUIT: CmdQuit(&gcmd); break;
-			case CMD_SYNTAX_ERR: CmdSyntaxErr(&gcmd); break;
+		switch (cmd.cmd) {		/* execute command */
+			case CMD_GET_CODE: CmdGetCode(&cmd); break;
+			case CMD_SET_CODE: CmdSetCode(&cmd); break;
+			case CMD_GET_DATA: CmdGetData(&cmd); break;
+			case CMD_SET_DATA: CmdSetData(&cmd); break;
+			case CMD_GET_STATE: CmdGetState(&cmd); break;
+			case CMD_EXEC: CmdExec(&cmd); break;
+			case CMD_CLS: CmdCls(&cmd); break;
+			case CMD_HELP: CmdHelp(&cmd); break;
+			case CMD_QUIT: CmdQuit(&cmd); break;
+			case CMD_SYNTAX_ERR: CmdSyntaxErr(&cmd); break;
 			case CMD_NOP:
 			default:
 		}
@@ -109,73 +113,111 @@ void CmdCShowMode(void) {
 */
 
 
-void CmdCode(struct cmd *gcmd) {
-	/* Get, say 100 bytes from hardware */
-	sp = CreatePacket(0);
-	sp->cmd = CMD_HW_GET_DATA;
-	sp->size = 0;
-	sp->csum = 0;
-	SendPacket(sp);
-	DestroyPacket(sp);
-	rp = RecvPacket();
+void CmdGetCode(struct cmd *cmd) {
+	/* get data from hardware */
+	sp = CreatePacket(sizeof(struct cmd));
+	sp->cmd = CMD_GET_DATA;
+	memcpy((char *)sp+PACKET_HDR_SIZE, cmd, sizeof(struct cmd));
+	
+	SendPacket(sp);				/* send request for data */
+	rp = RecvPacket();			/* receive data */
 
 	/* show disassembly output */
-	scmd.cmd = CMD_CODE;
-	scmd.data = CreateDisasm((unsigned char *)(rp+PACKET_HDR_SIZE), rp->size);
-	ShowCommand(&scmd);
-	DestroyDisasm(scmd.data);
+	cmd->data = CreateDisasm(cmd->addr1, (unsigned char *)rp+PACKET_HDR_SIZE,
+							rp->size);
+	ShowCommand(cmd);
+
+	/* destroy disassembly and packets */
+	DestroyDisasm(cmd->data);
+	DestroyPacket(sp);
 	DestroyPacket(rp);
 }
 
 
-void CmdData(struct cmd *gcmd) {
+void CmdSetCode(struct cmd *cmd) {
+	printf("%s\n", cmd->data);
+
+	//ParseSFile(cmd->data, 
+	
+	free(cmd->data);
+}
+
+
+void CmdGetData(struct cmd *cmd) {
 	/* get data from hardware */
-	sp = CreatePacket(0);
-	sp->cmd = CMD_HW_GET_DATA;
-	sp->size = 0;
-	sp->csum = 0;
-	SendPacket(sp);
-	DestroyPacket(sp);
-	rp = RecvPacket();
+	sp = CreatePacket(sizeof(struct cmd));
+	sp->cmd = CMD_GET_DATA;
+	memcpy((char *)sp+PACKET_HDR_SIZE, cmd, sizeof(struct cmd));
+	
+	SendPacket(sp);				/* send request for data */
+	rp = RecvPacket();			/* receive data */
 
 	/* show data output */
-	scmd.cmd = CMD_DATA;
-	scmd.mod = gcmd->mod;
-	scmd.addr1 = gcmd->addr1;
-	scmd.addr2 = gcmd->addr2;
-	scmd.dsize = rp->size;
-	scmd.data = rp+PACKET_HDR_SIZE;
-	ShowCommand(&scmd);
+	cmd->dsize = rp->size;
+	cmd->data = ((unsigned char *)rp)+PACKET_HDR_SIZE;
+	ShowCommand(cmd);
+
+	/* destroy packets */
+	DestroyPacket(sp);
 	DestroyPacket(rp);
 }
 
 
-void CmdState(struct cmd *gcmd) {
+void CmdSetData(struct cmd *cmd) {
+	/* tell HC11 we'll be uploading data soon */
+	sp = CreatePacket(sizeof(struct cmd));
+	sp->cmd = CMD_SET_DATA;
+	memcpy((char *)sp+PACKET_HDR_SIZE, cmd, sizeof(struct cmd));
+	SendPacket(sp);
+	DestroyPacket(sp);
+	
+	/* create packet with the data to upload and send it to HC11 */
+	sp = CreatePacket(cmd->dsize);
+	memcpy((char *)sp+PACKET_HDR_SIZE, cmd->data, cmd->dsize);
+	SendPacket(sp);
+	DestroyPacket(sp);
+
+	/* free data */
+	free(cmd->data);
+}
+
+
+void CmdGetState(struct cmd *cmd) {
+	printf("not implemented\n");
+
 	/* show state output */
-	ShowCommand(gcmd);
+	ShowCommand(cmd);
 }
 
 
-void CmdCls(struct cmd *gcmd) {
-	scmd.cmd = CMD_CLS;
-	ShowCommand(&scmd);
+/* Change the program counter at HC11. */
+void CmdExec(struct cmd *cmd) {
+	sp = CreatePacket(sizeof(struct cmd));
+	sp->cmd = CMD_EXEC;
+	memcpy((char *)sp+PACKET_HDR_SIZE, cmd, sizeof(struct cmd));
+	SendPacket(sp);
+	DestroyPacket(sp);
 }
 
 
-void CmdHelp(struct cmd *gcmd) {
-	scmd.cmd = CMD_HELP;
-	scmd.mod = gcmd->mod;
-	ShowCommand(&scmd);
+/* Clear screen. */
+void CmdCls(struct cmd *cmd) {
+	ShowCommand(cmd);
 }
 
 
-void CmdSyntaxErr(struct cmd *gcmd) {
-	scmd.cmd = CMD_SYNTAX_ERR;
-	ShowCommand(&scmd);
+/* Show help on different commands. */
+void CmdHelp(struct cmd *cmd) {
+	ShowCommand(cmd);
 }
 
 
-void CmdQuit(struct cmd *gcmd) {
+void CmdSyntaxErr(struct cmd *cmd) {
+	ShowCommand(cmd);
+}
+
+
+void CmdQuit(struct cmd *cmd) {
 	Cleanup();
 	exit(0);
 }
@@ -220,7 +262,7 @@ void Cleanup(void) {
 
 
 void SigDef(int signum) {
-	printf("devsys signal %i\n", signum);
+	printf("signal %i\n", signum);
 	Cleanup();
 	exit(-2);
 }

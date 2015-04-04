@@ -3,6 +3,11 @@
 #define UI_TXT_H
 
 
+/* UI defines.
+ * as many as possible should be found out at runtime */
+#define ROWS				30
+#define COLUMNS				80
+
 /* user interface commands */
 #define SHOW_DATA_WIN		0
 #define SHOW_CODE_WIN		1

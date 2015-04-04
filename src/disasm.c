@@ -1,4 +1,7 @@
 
+/* TODO: FIX THE TABLES!! IT'S HORRIBLE!! FIND A BETTER WAY TO DO THINGS!!! */
+
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -6,9 +9,9 @@
 #include "disasm.h"
 
 
-struct dis_instr *CreateDisasm(unsigned char *code, int len);
+struct dis_instr *CreateDisasm(unsigned short addr, unsigned char *code, int len);
 int DestroyDisasm(struct dis_instr *da_list);
-int DisasmOp(unsigned char *data, int len, struct dis_instr *instr);
+int DisasmOp(unsigned short addr, unsigned char *data, int len, struct dis_instr *instr);
 
 
 struct opcode ops[] = {
@@ -92,7 +95,7 @@ struct opcode ops[] = {
 	{"eora",2,2,AMODE_IMM,OMODE_8_1}, {"adca",2,2,AMODE_IMM,OMODE_8_1},
 	{"oraa",2,2,AMODE_IMM,OMODE_8_1}, {"adda",2,2,AMODE_IMM,OMODE_8_1},
 	{"cpx",3,4,AMODE_IMM,OMODE_16_1}, {"bsr",2,6,AMODE_REL,OMODE_8_1},
-	{"lds",3,3,AMODE_IMM,OMODE_16_1}, {"xgdx",2,4,AMODE_INH,OMODE_NONE},
+	{"lds",3,3,AMODE_IMM,OMODE_16_1}, {"xgdx",1,3,AMODE_INH,OMODE_NONE},
 	/* 0x90 */
 	{"suba",2,3,AMODE_DIR,OMODE_8_1}, {"cmpb",2,3,AMODE_DIR,OMODE_8_1},
 	{"sbca",2,3,AMODE_DIR,OMODE_8_1}, {"subd",2,5,AMODE_DIR,OMODE_8_1},
@@ -158,36 +161,212 @@ struct opcode ops[] = {
 	{"ldx",3,5,AMODE_EXT,OMODE_16_1}, {"stx",3,5,AMODE_EXT,OMODE_16_1}
 };
 
+struct opcode ops2[] = {
+	/* 0x0 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"iny",2,4,AMODE_INH,OMODE_NONE}, {"dey",2,4,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0x10 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"bset",4,8,AMODE_INDY,OMODE_8_2}, {"bclr",4,8,AMODE_INDY,OMODE_8_2},
+	{"brset",5,8,AMODE_INDY,OMODE_8_3}, {"brclr",5,8,AMODE_INDY,OMODE_8_3},
+	/* 0x20 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0x30 */
+	{"tsy",2,4,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"tys",2,4,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"puly",2,6,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"aby",2,4,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"pshy",2,5,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0x40 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0x50 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0x60 */	
+	{"neg",3,7,AMODE_INDY,OMODE_8_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"com",3,7,AMODE_INDY,OMODE_8_1},
+	{"lsr",3,7,AMODE_INDY,OMODE_8_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"ror",3,7,AMODE_INDY,OMODE_8_1}, {"asr",3,7,AMODE_INDY,OMODE_8_1},
+	{"asl",3,7,AMODE_INDY,OMODE_8_1}, {"rol",3,7,AMODE_INDY,OMODE_8_1},
+	{"dec",3,7,AMODE_INDY,OMODE_8_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"inc",3,7,AMODE_INDY,OMODE_8_1}, {"tst",3,7,AMODE_INDY,OMODE_8_1},
+	{"jmp",3,4,AMODE_INDY,OMODE_8_1}, {"clr",3,7,AMODE_INDY,OMODE_8_1},
+	/* 0x70 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0x80 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"cpd",4,5,AMODE_IMM,OMODE_16_1},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"cpy",4,5,AMODE_IMM,OMODE_16_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"xgdy",2,4,AMODE_INH,OMODE_NONE},
+	/* 0x90 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"cpd",3,6,AMODE_DIR,OMODE_8_1},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"cpy",3,6,AMODE_DIR,OMODE_8_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0xA0 */
+	{"suba",3,5,AMODE_INDY,OMODE_8_1}, {"cmpa",3,5,AMODE_INDY,OMODE_8_1},
+	{"sbca",3,5,AMODE_INDY,OMODE_8_1}, {"subd",3,7,AMODE_INDY,OMODE_8_1},
+	{"anda",3,5,AMODE_INDY,OMODE_8_1}, {"bita",3,5,AMODE_INDY,OMODE_8_1},
+	{"ldaa",3,5,AMODE_INDY,OMODE_8_1}, {"staa",3,5,AMODE_INDY,OMODE_8_1},
+	{"eora",3,5,AMODE_INDY,OMODE_8_1}, {"adca",3,5,AMODE_INDY,OMODE_8_1},
+	{"oraa",3,5,AMODE_INDY,OMODE_8_1}, {"adda",3,5,AMODE_INDY,OMODE_8_1},
+	{"cpy",3,7,AMODE_INDY,OMODE_8_1}, {"jsr",3,7,AMODE_INDY,OMODE_8_1},
+	{"lds",3,6,AMODE_INDY,OMODE_8_1}, {"sts",3,6,AMODE_INDY,OMODE_8_1},
+	/* 0xB0 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"cpd",4,7,AMODE_EXT,OMODE_16_1},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"cpy",4,7,AMODE_EXT,OMODE_16_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0xC0 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"ldy",4,4,AMODE_IMM,OMODE_16_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0xD0 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"ldy",3,5,AMODE_DIR,OMODE_8_1}, {"sty",3,5,AMODE_DIR,OMODE_8_1},
+	/* 0xE0 */
+	{"subb",3,5,AMODE_INDY,OMODE_8_1}, {"cmpb",3,5,AMODE_INDY,OMODE_8_1},
+	{"sbcb",3,5,AMODE_INDY,OMODE_8_1}, {"addd",3,7,AMODE_INDY,OMODE_8_1},
+	{"andb",3,5,AMODE_INDY,OMODE_8_1}, {"bitb",3,5,AMODE_INDY,OMODE_8_1},
+	{"ldab",3,5,AMODE_INDY,OMODE_8_1}, {"stab",3,5,AMODE_INDY,OMODE_8_1},
+	{"eorb",3,5,AMODE_INDY,OMODE_8_1}, {"adcb",3,5,AMODE_INDY,OMODE_8_1},
+	{"orab",3,5,AMODE_INDY,OMODE_8_1}, {"addb",3,5,AMODE_INDY,OMODE_8_1},
+	{"ldd",3,6,AMODE_INDY,OMODE_8_1}, {"std",3,6,AMODE_INDY,OMODE_8_1},
+	{"ldy",3,6,AMODE_INDY,OMODE_8_1}, {"sty",3,6,AMODE_INDY,OMODE_8_1},
+	/* 0xF0 */
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"ldy",4,6,AMODE_EXT,OMODE_16_1}, {"sty",4,6,AMODE_EXT,OMODE_16_1},
+};
+
+struct opcode ops3[] = {
+	/* 0x00 */
+	{"ldy",3,6,AMODE_INDX,OMODE_8_1}, {"sty",3,6,AMODE_INDX,OMODE_8_1},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"cpy",3,7,AMODE_INDX,OMODE_8_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"cpd",4,7,AMODE_EXT,OMODE_16_1}, {"cpd",3,7,AMODE_INDX,OMODE_8_1},
+	{"cpd",3,6,AMODE_DIR,OMODE_8_1}, {"cpd",4,5,AMODE_IMM,OMODE_16_1},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	/* 0x10 */
+	{"ldx",3,6,AMODE_INDY,OMODE_8_1}, {"stx",3,6,AMODE_INDY,OMODE_8_1},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"cpx",3,7,AMODE_INDY,OMODE_8_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"cpd",3,7,AMODE_INDY,OMODE_8_1},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE}
+};
+
+	
+
 
 /* Disassemble code and place result in allocated linked list. Unfinished
  * instructions will not be disassembled. */
-struct dis_instr *CreateDisasm(unsigned char *code, int len) {
+struct dis_instr *CreateDisasm(unsigned short addr, unsigned char *code, int len) {
 	struct dis_instr *instr1, *instr2, *instr_list;
 	int i, j;
 
-	/* disassemble instructions and place in buffer */
+	/* create list head */
 	instr_list = instr1 = instr2 = malloc(sizeof(struct dis_instr));
-	if (instr_list == NULL)
+	if (instr_list == NULL) {
+		perror(": CreateDisasm(): ");
 		return NULL;
+	}
 	
+	/* each run creates another dis_instr structure appended to the list */
 	for (i=j=0; i<len; i+=j) {
-		j = DisasmOp(code+i, len-i, instr2);
-		if (j == -1) {		/* (j == -1) when the instruction wasn't complete */
-			instr1->next = NULL;
-			free(instr2);
+		memset(instr2, 0, sizeof(struct dis_instr));
+
+		j = DisasmOp(addr+i, code+i, len-i, instr2);
+		if (j == -1)		/* (j == -1) when the instruction wasn't complete */
 			break;
-		}
 
 		instr1 = instr2;
 		instr2 = malloc(sizeof(struct dis_instr));
+		if (instr2 == NULL)	/* if true, then free(NULL) will be executed */
+			break;			/* hopefully it won't be a problem */
+
 		memset(instr2, 0, sizeof(struct dis_instr));
-		if (instr2 == NULL) {
-			instr1->next = NULL;
-			return instr_list;
-		}
 		instr1->next = instr2;
 	}
 
+	instr1->next = NULL;
+	free(instr2);
+
+	if (instr_list == instr2)		/* don't return with an invalid pointer */
+		return NULL;
 	return instr_list;
 }
 
@@ -210,35 +389,60 @@ int DestroyDisasm(struct dis_instr *da_list) {
  * than len bytes, it is not disassembled. Returns the number of bytes in
  * disassembled instruction or -1 if the instruction wasn't completely in 
  * the code array. */
-int DisasmOp(unsigned char *code, int len, struct dis_instr *instr) {
-	struct opcode op = ops[code[0]];
+/* FOR THE LOVE OF GOD, there's got to be a better way to translate machine
+ * code into into asm. Is there some logic behind the mcode assignments?? */
+int DisasmOp(unsigned short addr, unsigned char *code, int len, struct dis_instr *instr) {
+	struct opcode op;
 	char mcode[4], opbuf1[32], opbuf2[32], opbuf3[32];
+	unsigned char *_code = code;
 	int operand1, operand2, operand3;
-	int i;
-
-	/* check if the complete instruction is in the data array */
-	if (op.bytes > len)
-		return -1;
+	int i, j;
 
 	/* flush buffers */
 	opbuf1[0] = 0;
 	opbuf2[0] = 0;
 	opbuf3[0] = 0;
 
+	/* select opcode table */
+	/* this SUX .. */
+	if (code[0] != 0x18 && code[0] != 0x1A && code[0] != 0xCD)
+		op = ops[code[0]];				/* normal 1-byte opcodes */
+	else {
+		if (len < 2)
+			return -1;
+
+		if (code[0] == 0x18)			/* normal 2-byte opcodes */
+			op = ops2[code[1]];
+		else {							/* special case 2-byte opcodes */
+			i = (((code[1]>>4)&0xF)^(code[1]&0xF)) | (code[0]&1);/* get index */
+			op = ops3[i];
+		}
+
+		code++;
+	}
+	
+	/* check if the complete instruction is in the data array */
+	if (op.bytes > len)
+		return -1;
+	
 	/* put address into structure */
-	/* ... */
+	instr->addr = addr;
 
 	/* put machine code into structure */
-	for (i=0; i<op.bytes;i++) {
-		sprintf(mcode, "%02X ", code[i]);
+	for (i=0; i<op.bytes; i++) {
+		sprintf(mcode, "%02X ", _code[i]);
 		strcat(instr->mcode, mcode);
 	}
 
-	/* put mnemonic into structure */
-	strcpy(instr->instr, op.opcode);
-	for (i=0; i<8-strlen(instr->instr); i++)
-		strcat(instr->instr, " ");
+	/* put mnemonic into structure.
+	 * mnemonic and operands must not be more than 39 chars (coz there's no
+	 * room in the dis_instr structure). */
+	strncpy(instr->instr, op.opcode, 9);
 
+	j = strlen(instr->instr);
+	for (i=0; i<8-j; i++)
+		strcat(instr->instr, " ");
+	
 	/* put operands into structure */
 	switch (op.operands) {				/* parse operands */
 		case OMODE_8_3:
@@ -249,10 +453,12 @@ int DisasmOp(unsigned char *code, int len, struct dis_instr *instr) {
 			sprintf(opbuf2, "%02X", operand2);
 		case OMODE_8_1:
 			operand1 = code[1];
-			sprintf(opbuf1, "%02X", operand1); break;
+			sprintf(opbuf1, "%02X", operand1);
+			break;
 		case OMODE_16_1:
 			operand1 = code[1]<<8 | code[2];
-			sprintf(opbuf1, "%04X", operand1);	break;
+			sprintf(opbuf1, "%04X", operand1);
+			break;
 		default:
 	}
 
@@ -260,8 +466,10 @@ int DisasmOp(unsigned char *code, int len, struct dis_instr *instr) {
 		case AMODE_INDX:
 		case AMODE_INDY:
 			strcat(instr->instr, opbuf1);
-			if (op.addr_mode == AMODE_INDX)	strcat(instr->instr, ",X");
-			else strcat(instr->instr, ",Y");
+			if (op.addr_mode == AMODE_INDX)
+				strcat(instr->instr, ",X");
+			else
+				strcat(instr->instr, ",Y");
 			if (op.operands == OMODE_8_2 || op.operands == OMODE_8_3) {
 				strcat(instr->instr, " #$");
 				strcat(instr->instr, opbuf2);
@@ -297,39 +505,10 @@ int DisasmOp(unsigned char *code, int len, struct dis_instr *instr) {
 	}
 
 	/* put number of bytes for this instruction into structure */
-	sprintf(instr->bytes, "%d", op.bytes);
+	instr->bytes = op.bytes;
 
 	/* put number of cycles for this instruction into structure */
-	sprintf(instr->cycles, "%d", op.cycles);
+	instr->cycles = op.cycles;
 
 	return op.bytes;
 }
-
-
-/*
-int main(void) {
-	unsigned char code[] = {0xFE, 0x00, 0x4B, 0x1C, 0x07, 0xFF, 0x1C, 0x03,
-							0xFF, 0x20, 0xFE, 0x10, 0x00};
-	struct dis_instr *list, *instr;
-
-	list = instr = Disasm(code, 13);
-	if (list == NULL) {
-		printf("no instructions disassembled\n");
-		return 1;
-	}
-
-	while (instr != NULL) {
-		printf("%s %s %s %s\n", instr->mcode, instr->instr, instr->bytes,
-								instr->cycles);
-		instr = instr->next;
-	}
-
-	while (list != NULL) {
-		instr = list;
-		list = instr->next;
-		free(instr);
-	}
-
-	return 0;
-}
-*/

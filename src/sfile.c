@@ -30,13 +30,15 @@ int SendSFile(char *file, int options) {
 	
 	/* get file length */
 	fd = open(file, O_RDONLY);
-	if (fd == -1) return -1;
+	if (fd == -1)
+		return -1;
 	len = lseek(fd, 0, SEEK_END);
 	close(fd);
 	
 	/* parse file */
 	buf = malloc(len);
-	if (buf == NULL) return -1;
+	if (buf == NULL)
+		return -1;
 	len = ParseSFile(file, buf, SFILE_COMPRESSED);
 	if (len == -1) {
 		free(buf);
@@ -102,6 +104,8 @@ int ParseSFile(char *file, char *buf, int options) {
 				} else {
 					memaddr2 = GetByte(sfile+i+4)<<8 | GetByte(sfile+i+6);
 					//printf("%02X %02X %02X\n", memaddr1, memaddr2, linelen-3);
+					if (memaddr1 > memaddr2)
+						break;
 					holelen = memaddr2 - memaddr1;
 					for (j=0; j<holelen; j++, buflen++)
 						buf[buflen] = 0;
