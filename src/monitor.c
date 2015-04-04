@@ -48,7 +48,7 @@ int InstallMonitor(struct mcu_env *env) {
 	
 	/* prepare the setup code, before uploading it */
 	sf = CreateSFile("./hc11/setup.s19", SFILE_UNCOMPRESSED);
-	if (sf == NULL || sf->dsize < 256)
+	if (sf == NULL || sf->dsize != 256)
 		return -1;
 	ConfigEnvOptions(env, sf->data);
 
@@ -66,8 +66,8 @@ int InstallMonitor(struct mcu_env *env) {
 	sf = CreateSFile("./hc11/monitor.s19", SFILE_UNCOMPRESSED);
 	if (sf == NULL)
 		return -1;
-	r1 = SendData(sf->data+0x1FC0, 0x40);
-	r2 = SendData(sf->data+0x100, 0x1EBF);
+	r1 = SendData(sf->data+0x1FC0, 0x40);		/* monitor */
+	r2 = SendData(sf->data+0x100, 0x1EBF);		/* int vectors */
 	DestroySFile(sf);
 	if (r1 == -1 || r2 == -1)
 		return -1;

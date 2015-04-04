@@ -261,14 +261,14 @@ _dly0:	dex
 ;=== cmd_nop ===================================================================
 cmd_nop:
 		ldaa	#$FF
-		jsr		debug_ac
+		;jsr		debug_ac
 		rts
 
 
 ;=== cmd_get_data ==============================================================
 cmd_get_data:
 		ldaa	#$01
-		jsr		debug_ac
+		;jsr		debug_ac
 
 		; parse packet data
 		ldd		packet_data+2			; ntohs() should be done at PC side
@@ -299,7 +299,7 @@ _l20:	std		m_packet+_packet_size	; put size into main packet
 ;=== cmd_set_data ==============================================================
 cmd_set_data:
 		ldaa	#$02
-		jsr		debug_ac
+		;jsr		debug_ac
 
 		ldd		packet_data+2			; ntohs() should be done at PC side
 		stab	packet_data+2			; addr1
@@ -317,7 +317,7 @@ cmd_set_data:
 cmd_get_state:
 		; not implemented
 		ldaa	#$03
-		jsr		debug_ac
+		;jsr		debug_ac
 		rts
 
 
@@ -325,14 +325,14 @@ cmd_get_state:
 cmd_set_state:
 		; not implemented
 		ldaa	#$04
-		jsr		debug_ac
+		;jsr		debug_ac
 		rts
 
 
 ;=== cmd_exec ==================================================================
 cmd_exec:
 		ldaa	#$05
-		jsr		debug_ac
+		;jsr		debug_ac
 
 		ldd		packet_data+2			; again ntohs() should be at PC
 		stab	packet_data+2			; get start addr
@@ -347,7 +347,7 @@ cmd_exec:
 ;=== cmd_bp ====================================================================
 cmd_bp:
 		ldaa	#$06
-		jsr		debug_ac
+		;jsr		debug_ac
 
 		ldaa	packet_data+1			; get subcommand (set/clear)
 		cmpa	cmd_bp_set
@@ -366,7 +366,7 @@ cmd_set_code:
 		; isn't even necessary since it's done by cmd_set_data and logic
 		; at PC side
 		ldaa	#$07
-		jsr		debug_ac
+		;jsr		debug_ac
 
 		rts
 
@@ -374,7 +374,7 @@ cmd_set_code:
 ;=== cmd_err ===================================================================
 cmd_err:
 		ldaa	#$FE
-		jsr		debug_ac
+		;jsr		debug_ac
 		rts
 
 

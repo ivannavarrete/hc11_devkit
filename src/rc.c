@@ -44,7 +44,7 @@ int GetEnvOpt_RC(struct mcu_env *env) {
 
 	/* if the file is successfully opened and read , options won't be asked
 	 * from the user, even if it is empty */
-	while ((str = Token(str, &t))) {
+	while ((str = Token(str, &t, TOKEN_OPTION))) {
 		switch (t.token) {
 			/* ignore comments */
 			case TOKEN_COMMENT:
@@ -58,7 +58,7 @@ int GetEnvOpt_RC(struct mcu_env *env) {
 			/* parse an option */
 			case TOKEN_OPTION:
 				/* get next token (option value) */
-				str = Token(str, &t2);
+				str = Token(str, &t2, TOKEN_OPTION);
 				if (!str || (t2.token != TOKEN_WORD && t2.token != TOKEN_NUM)) {
 					printf("line ?: invalid option value\n");
 					break;

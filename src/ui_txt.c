@@ -90,7 +90,7 @@ int GetCommand(struct cmd *cmd) {
 	
 	/* fill command structure */
 	/* first get the command ... */
-	cmdptr = Token(cmdptr, &t);
+	cmdptr = Token(cmdptr, &t, TOKEN_COMMAND);
 	if (t.token == TOKEN_COMMAND) {
 		cmd->cmd = t.attr;
 		cmd->mod = t.attr2;
@@ -106,7 +106,7 @@ int GetCommand(struct cmd *cmd) {
 			cmd->addr2 = GetAddr(&cmdptr, &t, cmd, 1);
 			break;
 		case CMD_SET_CODE:
-			cmdptr = Token(cmdptr, &t);		/* get file name */
+			cmdptr = Token(cmdptr, &t, TOKEN_COMMAND);	/* get file name */
 			if (cmdptr) {
 				cmd->dsize = strlen(t.lex) + 1;
 				cmd->data = malloc(cmd->dsize);
@@ -124,7 +124,7 @@ int GetCommand(struct cmd *cmd) {
 				cmd->addr1 = GetAddr(&cmdptr, &t, cmd, 0);
 				cmd->addr2 = GetAddr(&cmdptr, &t, cmd, 0);
 
-				cmdptr = Token(cmdptr, &t);
+				cmdptr = Token(cmdptr, &t, TOKEN_COMMAND);
 				if (t.token == TOKEN_NUM && t.attr < 256) {
 					cmd->dsize = cmd->addr2 - cmd->addr1 + 1;
 					cmd->data = malloc(cmd->dsize);
@@ -147,7 +147,7 @@ int GetCommand(struct cmd *cmd) {
 			
 			break;
 		case CMD_HELP:
-			cmdptr = Token(cmdptr, &t);
+			cmdptr = Token(cmdptr, &t, TOKEN_COMMAND);
 			if (cmdptr && t.token == TOKEN_COMMAND)
 				cmd->mod = t.attr;
 			else if (cmdptr)
@@ -522,7 +522,7 @@ void Cls(struct cmd *scmd) {
  * This routine returns a number on success. On failure it returns 0 AND sets
  * cmd->cmd to CMD_SYNTAX_ERR. */
 int GetAddr(char **str, struct token *t, struct cmd *cmd, int opt) {
-	*str = Token(*str, t);
+	*str = Token(*str, t, TOKEN_COMMAND);
 
 	if (opt) {								/* optional */
 		if (*str && t->token == TOKEN_NUM)

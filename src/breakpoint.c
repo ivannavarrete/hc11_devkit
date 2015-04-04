@@ -45,7 +45,7 @@ int ClearBP(int n) {
 		}
 	}
 
-	ShowMsg(": bad breakpoint number\n");
+	ShowMsg("bad breakpoint number\n");
 	return 0;
 }
 

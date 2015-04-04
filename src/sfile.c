@@ -23,8 +23,10 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #include "sfile.h"
+#include "ui.h"
 
 
 /* Create an sfile structure describing the parsed s-file. The data buffer in
@@ -54,9 +56,8 @@ struct sfile *CreateSFile(char *file, int options) {
 	/* mmap the file */
 	fd = open(file, O_RDONLY);
 	if (fd == -1) {
-		printf(": ");
-		fflush(stdout);
-		perror("");
+		ShowMsg((char *)sys_errlist[errno]);
+		ShowMsg("\n");
 		goto fail;
 	}
 	filelen = lseek(fd, 0, SEEK_END);
@@ -162,7 +163,7 @@ void DestroySFile(struct sfile *sf) {
 }
 
 
-/* Can you see the segfault? Fixit later. */
+/* XXX Can you see the segfault? Fixit later. */
 unsigned char GetByte(char *str) {
 	unsigned char c1, c2;
 

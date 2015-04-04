@@ -73,7 +73,7 @@ struct mcu_env env = {
 };
 
 
-void main(int argc, char **argv) {
+int main(int argc, char **argv) {
 	if (Init() == -1)
 		Error("Init()");
 
@@ -99,6 +99,8 @@ void main(int argc, char **argv) {
 			default:
 		}
 	} while (1);
+
+	return 0;
 }
 
 
@@ -222,7 +224,7 @@ void CmdSetData(struct cmd *cmd) {
 
 
 void CmdGetState(struct cmd *cmd) {
-	ShowMsg(": not implemented\n");
+	ShowMsg("not implemented\n");
 
 	/* show state output */
 	ShowCommand(cmd);
@@ -261,9 +263,9 @@ void CmdBP(struct cmd *cmd) {
 				//rp = RecvPacket();	/* get old byte */
 				//if(!SetBP(cmd->addr1, rp->cmd))
 				if(!SetBP(cmd->addr1, 0))
-					ShowMsg(": too many breakpoints\n");
+					ShowMsg("too many breakpoints\n");
 			} else
-				ShowMsg(": duplicate breakpoint\n");
+				ShowMsg("duplicate breakpoint\n");
 		} else if (cmd->mod == CMD_BP_CLEAR) {
 			if (ClearBP(cmd->addr1));
 		}
@@ -319,6 +321,27 @@ int Init(void) {
 	ShowMsg("installing monitor, please wait ...\n");
 	if (InstallMonitor(&env) == -1)
 		goto Monitor_fail;
+
+	/* execute default commands */
+	sleep(7);
+	/* if (ui != txt) { ... */
+	cmd.cmd = CMD_GET_DATA;
+	cmd.mod = CMD_DATA_B;
+	cmd.addr1 = 0;
+	cmd.addr2 = 100;
+	CmdGetData(&cmd);
+
+	cmd.cmd = CMD_GET_CODE;
+	cmd.addr1 = 0;
+	cmd.addr2 = 100;
+	CmdGetCode(&cmd);
+
+	cmd.cmd = CMD_GET_STATE;
+	CmdGetState(&cmd);
+
+	cmd.cmd = CMD_CLS;
+	CmdCls(&cmd);
+	
 	ShowMsg("monitor installed\n");
 
 	return 0;

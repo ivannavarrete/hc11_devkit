@@ -12,6 +12,7 @@ struct token {
 
 #define LEX_LEN				256
 
+#define TOKEN_NONE			0
 #define TOKEN_NUM			1
 #define TOKEN_WORD			2
 #define TOKEN_COMMENT		3
@@ -42,9 +43,9 @@ struct token {
 //#define CMD_HELP			21
 
 
-char *Token(char *str, struct token *t);
+char *Token(char *str, struct token *t, int cmd);
 int Next(void);
-int Lookup(struct token *t);
+int Lookup(struct token *t, struct token *table);
 void Debug(struct token *t);
 
 
