@@ -9,14 +9,13 @@
  * main.c uses InitUI(), CleanupUI(), GetCommand(), ShowCommand(),
  * 			GetEnvOpt_UI().
  *
- * TODO: make a general GetAddr() routine.
- *
  * public routines:
  *		InitUI() initializes the user interface.
  *		CleanupUI() closes down the user interface.
  *		ConfigUI() reconfigures the user interface.
  *		GetCommand() gets a command structure from the user.
- *		ShowCommand() shows the result of an command.
+ *		ShowCommand() shows the result of a command.
+ *		ShowMsg() shows a message.
  *		GetEnvOpt_UI() gets HC11 setup options from user.
  * private routines:
  *		ShowState() shows the HC11 registers.
@@ -42,7 +41,9 @@
 #include "monitor.h"
 #include "disasm.h"
 #include "command.h"
-#include "ui_txt.h"
+#include "breakpoint.h"
+#include "lex.h"
+#include "ui.h"
 
 
 /* Initialize user interface. */
@@ -72,124 +73,59 @@ int ConfigUI(void) {
 
 /* This routine gets a command structure which it fills in with the user's 
  * command and options. */
-/* TODO: This routine is to fat. It could be slimmed. */
 int GetCommand(struct cmd *cmd) {
 	char cmdbuf[81];
-	char *cmdptr;
-	char *token;
-	char *delim = " \t\n";
-	char *end;
+	char *cmdptr = cmdbuf;
+	struct token t;
 	int i;
-	
+
 	memset(cmd, 0, sizeof(struct cmd));
+	cmdbuf[80] = 0;
 
 	/* get command and convert to lower case */
 	printf(":");
 	fgets(cmdbuf, 80, stdin);
 	for (i=0; i<strlen(cmdbuf); i++)
 		cmdbuf[i] = (char)tolower((int)cmdbuf[i]);
-
+	
 	/* fill command structure */
-	/* first parse the major command ... */
-	cmdptr = cmdbuf;
-	token = strsep(&cmdptr, delim);
-	if (token[0]) {
-		if (!strcmp(token, "d") || !strcmp(token, "db")) {
-			cmd->cmd = CMD_GET_DATA;
-			cmd->mod = CMD_DATA_B;
-		} else if (!strcmp(token, "dw")) {
-			cmd->cmd = CMD_GET_DATA;
-			cmd->mod = CMD_DATA_W;
-		} else if (!strcmp(token, "bf")) {
-			cmd->cmd = CMD_SET_DATA;
-			cmd->mod = CMD_DATA_BF;
-		} else if (!strcmp(token, "c"))
-			cmd->cmd = CMD_GET_CODE;
-		else if (!strcmp(token, "load"))
-			cmd->cmd = CMD_SET_CODE;
-		else if (!strcmp(token, "r"))
-			cmd->cmd = CMD_GET_STATE;
-		else if (!strcmp(token, "g"))
-			cmd->cmd = CMD_EXEC;
-		else if (!strcmp(token, "cls"))
-			cmd->cmd = CMD_CLS;
-		else if (!strcmp(token, "quit") || !strcmp(token, "q"))
-			cmd->cmd = CMD_QUIT;
-		else if (!strcmp(token, "help") || !strcmp(token, "h"))
-			cmd->cmd = CMD_HELP;
-		else
-			cmd->cmd = CMD_SYNTAX_ERR;
+	/* first get the command ... */
+	cmdptr = Token(cmdptr, &t);
+	if (t.token == TOKEN_COMMAND) {
+		cmd->cmd = t.attr;
+		cmd->mod = t.attr2;
 	} else
-		cmd->cmd = CMD_NOP;
+		cmd->cmd = CMD_SYNTAX_ERR;
 
 	/* ... then get command parameters where necessary */
 	switch (cmd->cmd) {
 		case CMD_GET_DATA:
 		case CMD_GET_CODE:
 		case CMD_EXEC:
-			token = strsep(&cmdptr, delim);		/* first addr is mandatory */
-			if (token[0]) {
-				cmd->addr1 = strtol(token, &end, 16);
-				if (*end != 0)
-					cmd->cmd = CMD_SYNTAX_ERR;
-			} else {
-				cmd->cmd = CMD_SYNTAX_ERR;
-				break;
-			}
-
-			token = strsep(&cmdptr, delim);		/* second addr is optional */
-			if (token[0]) {
-				cmd->addr2 = strtol(token, &end, 16);
-				if (*end != 0)
-					cmd->cmd = CMD_SYNTAX_ERR;
-			}
-
+			cmd->addr1 = GetAddr(&cmdptr, &t, cmd, 0);
+			cmd->addr2 = GetAddr(&cmdptr, &t, cmd, 1);
 			break;
 		case CMD_SET_CODE:
-			token = strsep(&cmdptr, delim);		/* get filename */
-			if (token[0]) {
-				cmd->dsize = strlen(token) + 1;
+			cmdptr = Token(cmdptr, &t);		/* get file name */
+			if (cmdptr) {
+				cmd->dsize = strlen(t.lex) + 1;
 				cmd->data = malloc(cmd->dsize);
 				if (!cmd->data) {
 					perror(": GetCommand(): ");
 					return -1;
 				}
-				strcpy(cmd->data, token);
-			} else {
+				strcpy(cmd->data, t.lex);
+			} else
 				cmd->cmd = CMD_SYNTAX_ERR;
-				break;
-			}
 
 			break;
 		case CMD_SET_DATA:
-			if (cmd->mod == CMD_DATA_BF) {
-				token = strsep(&cmdptr, delim);	/* first addr is mandatory */
-				if (token[0]) {
-					cmd->addr1 = strtol(token, &end, 16);
-					if (*end != 0)
-						cmd->cmd = CMD_SYNTAX_ERR;
-				} else {
-					cmd->cmd = CMD_SYNTAX_ERR;
-					break;
-				}
-			
-				token = strsep(&cmdptr, delim);	/* second addr is mandatory */
-				if (token[0]) {
-					cmd->addr2 = strtol(token, &end, 16);
-					if (*end != 0)
-						cmd->cmd = CMD_SYNTAX_ERR;
-				} else {
-					cmd->cmd = CMD_SYNTAX_ERR;
-					break;
-				}
+			if (!strcmp(t.lex, "bf")) {
+				cmd->addr1 = GetAddr(&cmdptr, &t, cmd, 0);
+				cmd->addr2 = GetAddr(&cmdptr, &t, cmd, 0);
 
-				token = strsep(&cmdptr, delim);
-				if (token[0]) {
-					if (strlen(token) != 2) {
-						cmd->cmd = CMD_SYNTAX_ERR;
-						break;
-					}
-
+				cmdptr = Token(cmdptr, &t);
+				if (t.token == TOKEN_NUM && t.attr < 256) {
 					cmd->dsize = cmd->addr2 - cmd->addr1 + 1;
 					cmd->data = malloc(cmd->dsize);
 					if (!cmd->data) {
@@ -197,40 +133,28 @@ int GetCommand(struct cmd *cmd) {
 						return -1;
 					}
 
-					for (i=0; i<strlen(token); i++)
-						token[i] = toupper(token[i]);
-
-					i = GetHex(token[0])<<4 | GetHex(token[1]);
-					memset(cmd->data, i, cmd->dsize);
-				} else {
+					memset(cmd->data, t.attr, cmd->dsize);
+				} else
 					cmd->cmd = CMD_SYNTAX_ERR;
-					break;
-				}
 			}
+
+			break;
+		case CMD_BP:
+			if (cmd->mod == CMD_BP_SET || cmd->mod == CMD_BP_CLEAR)
+				cmd->addr1 = GetAddr(&cmdptr, &t, cmd, 0);
+			else
+				cmd->addr1 = GetAddr(&cmdptr, &t, cmd, 1);
 			
 			break;
 		case CMD_HELP:
-			token = strsep(&cmdptr, delim);
-			if (token[0]) {		/* get help on specific command */
-				if (!strcmp(token, "c"))
-					cmd->mod = CMD_GET_CODE;
-				else if (!strcmp(token, "db") || !strcmp(token, "dw"))
-					cmd->mod = CMD_GET_DATA;
-				else if (!strcmp(token, "bf"))
-					cmd->mod = CMD_DATA_BF;
-				else if (!strcmp(token, "g"))
-					cmd->mod = CMD_EXEC;
-				else if (!strcmp(token, "cls"))
-					cmd->mod = CMD_CLS;
-				else if (!strcmp(token, "help") || !strcmp(token, "h"))
-					cmd->mod = CMD_HELP;
-				else if (!strcmp(token, "quit") || !strcmp(token, "q"))
-					cmd->mod = CMD_QUIT;
-				else
-					cmd->mod = CMD_SYNTAX_ERR;
-			}
-
+			cmdptr = Token(cmdptr, &t);
+			if (cmdptr && t.token == TOKEN_COMMAND)
+				cmd->mod = t.attr;
+			else if (cmdptr)
+				cmd->cmd = CMD_SYNTAX_ERR;
+				
 			break;
+		case CMD_SYNTAX_ERR:
 		default:
 			break;			/* only commands with no params end up here */
 	}
@@ -245,6 +169,7 @@ int ShowCommand(struct cmd *scmd) {
 		case CMD_GET_CODE: ShowCode(scmd); break;
 		case CMD_GET_DATA: ShowData(scmd); break;
 		case CMD_GET_STATE: ShowState(scmd); break;
+		case CMD_BP: ShowBP(scmd); break;
 		case CMD_HELP: Help(scmd); break;
 		case CMD_CLS: Cls(scmd); break;
 		case CMD_SYNTAX_ERR: SyntaxError(scmd); break;
@@ -496,6 +421,15 @@ int ShowCode(struct cmd *scmd) {
 }
 
 
+int ShowBP(struct cmd *scmd) {
+	struct breakpoint *bp = (struct breakpoint *)scmd->data;
+
+	printf(": %u: %04u\n", bp->num, bp->addr);
+
+	return 0;
+}
+
+
 /* Show current disassembly mode. */
 /*
 void ShowDisasmMode(struct cmd *cmd) {
@@ -505,6 +439,12 @@ void ShowDisasmMode(struct cmd *cmd) {
 			(*(int *)(cmd->data) & DMODE_CYCLES) ? "on" : "off");
 }
 */
+
+
+int ShowMsg(char *msg) {
+	printf("%s", msg);
+	return 0;
+}
 
 
 /* Display error message. */
@@ -536,6 +476,9 @@ void Help(struct cmd *scmd) {
 			printf(":\n:\tg <saddr>\n"
 				": Execute code starting at address saddr.\n");
 			break;
+		case CMD_BP:
+			printf(":\n:\tbp <addr>\n"
+				": Set a breakpoint at addr.\n");
 		case CMD_CLS:
 			printf(":\n:\tcls\n: Clear display.\n");
 			break;
@@ -556,6 +499,7 @@ void Help(struct cmd *scmd) {
 					":\tbf <saddr> <eaddr> <val>       block fill memory area\n"
 					":\tc <saddr> [eaddr]              disassemble code\n"
 					":\tg <saddr>                      execute code\n"
+					":\tbp <addr>                      set a breakpoint\n"
 					":\tcls                            clear display\n"
 					":\thelp [command]                 show help on commands\n"
 					":\tquit                           exit program\n");
@@ -569,6 +513,32 @@ void Cls(struct cmd *scmd) {
 
 	for (i=0; i<ROWS; i++)
 		printf(":\n");
+}
+
+
+/* Internal routine for use in GetCommand(). Note that t gets changed, so
+ * don't call this if t is still needed in GetCommand(). (Or make another
+ * variable for this routine.)
+ * This routine returns a number on success. On failure it returns 0 AND sets
+ * cmd->cmd to CMD_SYNTAX_ERR. */
+int GetAddr(char **str, struct token *t, struct cmd *cmd, int opt) {
+	*str = Token(*str, t);
+
+	if (opt) {								/* optional */
+		if (*str && t->token == TOKEN_NUM)
+			return t->attr;
+		else if (*str)
+			cmd->cmd = CMD_SYNTAX_ERR;
+		else
+			return 0;
+	} else {								/* mandatory */
+		if (t->token == TOKEN_NUM)
+			return t->attr;
+		else
+			cmd->cmd = CMD_SYNTAX_ERR;
+	}
+
+	return 0;
 }
 
 

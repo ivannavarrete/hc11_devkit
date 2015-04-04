@@ -2,12 +2,19 @@
 MAKE = make
 
 
-all:
-	@cd ./src; $(MAKE) all;
+all: txt
+
+txt:
+	@cd ./src; $(MAKE) txt;
 	@cp ./src/devsys ./bin;
 	@cp ./src/hc11/monitor.s19 ./bin/hc11;
 	@cp ./src/hc11/setup.s19 ./bin/hc11;
 
+nc:
+	@cd ./src; $(MAKE) nc;
+	@cp ./src/devsys ./bin;
+	@cp ./src/hc11/monitor.s19 ./bin/hc11;
+	@cp ./src/hc11/setup.s19 ./bin/hc11;
 
 clean:
 	@cd ./src; $(MAKE) clean;

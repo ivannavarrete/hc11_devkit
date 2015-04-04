@@ -2,17 +2,12 @@
 /*
  * rc.c
  *
- * This module parses the options from a configuration file. The technique used
- * here is the one described in 'Compilers: principles, techniques and tools'
- * ch. 3 (and probably in many other places :).
+ * This module parses the options from a configuration file.
  *
  * main.c uses GetEnvOpt_RC().
  *
  * public routines:
  *		GetEnvOpt_RC() parses the options from a configuration file.
- * private routines:
- *		Token() gets the next token from the configuration file.
- *		Next() switches to the next transition diagram to follow.
  *
  */
 
@@ -27,132 +22,128 @@
 #include <string.h>
 
 #include "monitor.h"
+#include "lex.h"
 #include "rc.h"
 
 
-int fd;
-
-int token;
-char lex[LEX_LEN];
-char lex2[LEX_LEN];
-int lex_ptr;
-int line = 1;
-
-int state, sstate;
-
-
-
-#define nextchar()\
-	if (read(fd, &c, 1) <= 0) return 0;\
-	if (lex_ptr < LEX_LEN-1) lex[lex_ptr++] = c;
-
-#define ungetchar()\
-	lseek(fd, -1, SEEK_CUR);\
-	lex[--lex_ptr] = 0;
-
-
 int GetEnvOpt_RC(struct mcu_env *env) {
-	int num;
+	struct token t, t2;
+	char buf[BUF_SIZE];	/* rc file must not be larger than BUF_SIZE bytes */
+	char *str = buf;
+	int fd;
 
 	/* try to open an rc file */
 	if ((fd = open(USER_RC_FILE, O_RDONLY)) == -1)
 		if ((fd = open(GLOBAL_RC_FILE, O_RDONLY)) == -1)
 			return -1;
-	
-	/* if the file is successfully opened, options won't be asked from the
-	 * user, even if it is empty */
-	while ((token = Token())) {
-		switch (token) {
+
+	/* read file */
+	if (read(fd, buf, BUF_SIZE-1) == -1)
+		return -1;
+	close(fd);
+
+	/* if the file is successfully opened and read , options won't be asked
+	 * from the user, even if it is empty */
+	while ((str = Token(str, &t))) {
+		switch (t.token) {
 			/* ignore comments */
 			case TOKEN_COMMENT:
 				break;
-			/* shouldn't be any numbers here */
+			/* shouldn't be any of theese here */
 			case TOKEN_NUM:
-				printf("line %d: invalid option\n", line);
+			case TOKEN_WORD:
+			case TOKEN_COMMAND:
+				printf("line ?: invalid option\n");
 				break;
 			/* parse an option */
-			case TOKEN_WORD:
-				strcpy(lex2, lex);
-				
-				token = Token();
-				if (token != TOKEN_WORD && token != TOKEN_NUM) {
-					printf("line %d: invalid option value\n", line);
+			case TOKEN_OPTION:
+				/* get next token (option value) */
+				str = Token(str, &t2);
+				if (!str || (t2.token != TOKEN_WORD && t2.token != TOKEN_NUM)) {
+					printf("line ?: invalid option value\n");
 					break;
 				}
 
-				if (!strcmp(lex2, "mode")) {			/* mode */
-					if (!strcmp(lex, "s"))
-						env->mode = MCU_MODE_SINGLECHIP;
-					else if (!strcmp(lex, "e"))
-						env->mode = MCU_MODE_EXPANDED;
-					else if (!strcmp(lex, "b"))
-						env->mode = MCU_MODE_BOOTSTRAP;
-					else if (!strcmp(lex, "t"))
-						env->mode = MCU_MODE_TEST;
-					else
-						printf("line %d: invalid option value\n", line);
-				} else if (!strcmp(lex2, "talker"))	{	/* talker */
-					num = (unsigned int)atoi(lex);
-					if (num <= 15  && token == TOKEN_NUM)
-						env->talker_page = num;
-					else
-						printf("line %d: invalide option value\n", line);
-				} else if (!strcmp(lex2, "ram")) {		/* ram */
-					num = (unsigned int)atoi(lex);
-					if (num <= 15 && token == TOKEN_NUM)
-						env->ram_page = num;
-					else
-						printf("line %d: invalide option value\n", line);
-				} else if (!strcmp(lex2, "reg")) {		/* reg */
-					num = (unsigned int)atoi(lex);
-					if (num <= 15  && token == TOKEN_NUM)
-						env->reg_page = num;
-					else
-						printf("line %d: invalide option value\n", line);
-				} else if (!strcmp(lex2, "eeprom")) {	/* eeprom */
-					if (!strcmp(lex, "on"))
-						env->on_chip_eeprom = 1;
-					else if (!strcmp(lex, "off"))
-						env->on_chip_eeprom = 0;
-					else
-						printf("line %d: invalid option value\n", line);
-				} else if (!strcmp(lex2, "rom")) {		/* rom */
-					if (!strcmp(lex, "on"))
-						env->on_chip_rom = 1;
-					else if (!strcmp(lex, "off"))
-						env->on_chip_rom = 0;
-					else
-						printf("line %d: invalid option value\n", line);
-				} else if (!strcmp(lex2, "irq")) {		/* irq */
-					if (!strcmp(lex, "edge"))
-						env->on_chip_eeprom = 1;
-					else if (!strcmp(lex, "level"))
-						env->on_chip_eeprom = 0;
-					else
-						printf("line %d: invalid option value\n", line);
-				} else if (!strcmp(lex2, "osc")) {		/* osc */
-					if (!strcmp(lex, "on"))
-						env->osc_delay = 1;
-					else if (!strcmp(lex, "off"))
-						env->osc_delay = 0;
-					else
-						printf("line %d: invalid option value\n", line);
-				} else if (!strcmp(lex2, "tmr")) {		/* tmr */
-					num = (unsigned int)atoi(lex);
-					if ((num == 1 || num == 4 || num == 8 || num == 16) &&\
-						token == TOKEN_NUM)
-						env->timer_rate = num;
-					else
-						printf("line %d: invalide option value\n", line);
-				} else if (!strcmp(lex2, "cop")) {		/* cop */
-					num = (unsigned int)atoi(lex);
-					if ((num == 1 || num == 4 || num == 16 || num == 64) &&\
-						token==TOKEN_NUM)
-						env->cop_rate = num;
-					else
-						printf("line %d: invalide option value\n", line);
-				} else
-					printf("line %d: invalid option\n", line);
+				switch (t.attr) {
+					case OPT_MODE:						/* mode */
+						if (!strcmp(t2.lex, "s"))
+							env->mode = MCU_MODE_SINGLECHIP;
+						else if (!strcmp(t2.lex, "e"))
+							env->mode = MCU_MODE_EXPANDED;
+						else if (!strcmp(t2.lex, "b"))
+							env->mode = MCU_MODE_BOOTSTRAP;
+						else if (!strcmp(t2.lex, "t"))
+							env->mode = MCU_MODE_TEST;
+						else
+							printf("line ?: invalid option value\n");
+						break;
+					case OPT_TALKER_PAGE:				/* talker page */
+						if (t2.attr <= 15  && t2.token == TOKEN_NUM)
+							env->talker_page = t2.attr;
+						else
+							printf("line ?: invalide option value\n");
+						break;
+					case OPT_RAM_PAGE:					/* ram page */
+						if (t2.attr <= 15 && t2.token == TOKEN_NUM)
+							env->ram_page = t2.attr;
+						else
+							printf("line ?: invalide option value\n");
+						break;
+					case OPT_REG_PAGE:					/* reg page */
+						if (t2.attr <= 15  && t2.token == TOKEN_NUM)
+							env->reg_page = t2.attr;
+						else
+							printf("line ?: invalide option value\n");
+						break;
+					case OPT_ON_CHIP_EEPROM:			/* eeprom */
+						if (!strcmp(t2.lex, "on"))
+							env->on_chip_eeprom = 1;
+						else if (!strcmp(t2.lex, "off"))
+							env->on_chip_eeprom = 0;
+						else
+							printf("line ?: invalid option value\n");
+						break;
+					case OPT_ON_CHIP_ROM:				/* rom */
+						if (!strcmp(t2.lex, "on"))
+							env->on_chip_rom = 1;
+						else if (!strcmp(t2.lex, "off"))
+							env->on_chip_rom = 0;
+						else
+							printf("line ?: invalid option value\n");
+						break;
+					case OPT_IRQ_MODE:					/* irq mode */
+						if (!strcmp(t2.lex, "edge"))
+							env->irq_mode = 1;
+						else if (!strcmp(t2.lex, "level"))
+							env->irq_mode = 0;
+						else
+							printf("line ?: invalid option value\n");
+						break;
+					case OPT_OSC_DELAY:					/* osc delay */
+						if (!strcmp(t2.lex, "on"))
+							env->osc_delay = 1;
+						else if (!strcmp(t2.lex, "off"))
+							env->osc_delay = 0;
+						else
+							printf("line ?: invalid option value\n");
+						break;
+					case OPT_TIMER_RATE:				/* timer rate */
+						if ((t2.attr == 1 || t2.attr == 4 || t2.attr == 8 ||\
+									t2.attr == 16) && t2.token == TOKEN_NUM)
+							env->timer_rate = t2.attr;
+						else
+							printf("line ?: invalide option value\n");
+						break;
+					case OPT_COP_RATE:					/* cop rate */
+						if ((t2.attr == 1 || t2.attr == 4 ||t2.attr == 16 ||\
+								t2.attr == 64) && t2.token==TOKEN_NUM)
+							env->cop_rate = t2.attr;
+						else
+							printf("line ?: invalide option value\n");
+						break;
+					default:
+						printf("line ?: invalid option\n");
+				}
 
 				break;
 			default:
@@ -160,115 +151,5 @@ int GetEnvOpt_RC(struct mcu_env *env) {
 		}
 	}
 
-	close(fd);
 	return 0;
-}
-
-
-/* This routine recognizes decimal numbers. Probably unnecessary.
- * Note that this routine ignores read() errors and takes them for EOF. Can this
- * become a problem? */
-int Token() {
-	char c;
-
-	bzero(lex, LEX_LEN);
-	lex_ptr = 0;
-	sstate = state = 1;
-
-	do {
-		switch (state) {
-			case 1:
-				nextchar();
-
-				/* strip blanks */
-				if (c == ' ' || c == '\t' || c == '\n') {
-					lex[--lex_ptr] = 0;
-					if (c == '\n')
-						line++;
-					break;
-				}
-
-				if (isdigit(c)) state = 2;
-				else state = Next();
-				break;
-			case 2:
-				nextchar();
-
-				if (isdigit(c)) break;
-				else if (c == '.') state = 3;
-				else state = 5;
-				break;
-			case 3:
-				nextchar();
-
-				if (isdigit(c)) state = 4;
-				else state = Next();
-				break;
-			case 4:
-				nextchar();
-
-				if (isdigit(c)) break;
-				else state = 5;
-				break;
-			case 5:
-				ungetchar();
-				return TOKEN_NUM;
-			
-			case 6:
-				nextchar();
-
-				if (isalpha(c)) state = 7;
-				else state = Next();
-				break;
-			case 7:
-				nextchar();
-
-				if (isalnum(c)) break;
-				else state = 8;
-				break;
-			case 8:
-				ungetchar();
-				return TOKEN_WORD;
-			
-			case 9:
-				nextchar();
-
-				if (c == '#') state = 10;
-				else state = Next();
-				break;
-			case 10:
-				nextchar();
-
-				if (c == '\n') state = 11;
-				break;
-			case 11:
-				ungetchar();
-				return TOKEN_COMMENT;
-			default:
-				printf("internal parser error: Token() in rc.c\n");
-				exit(-1);
-		}
-	} while (1);
-
-	return 0;
-}
-
-
-int Next() {
-	ungetchar();
-
-	switch (sstate) {
-		case 1: sstate = 6; break;
-		case 6: sstate = 9; break;
-		case 9:
-			printf("line %d: unrecognized token\n", line);
-			lseek(fd, 1, SEEK_CUR);
-			sstate = 1;
-			break;
-		default:
-			printf("internal parser error: Next() in rc.c\n");
-			exit(-1);
-	}
-
-	return sstate;
 }

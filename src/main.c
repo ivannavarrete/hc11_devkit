@@ -3,8 +3,7 @@
  * main.c
  *
  * WARNING: This program was written practically without any analysis or design.
- * This is probably a Bad Thing. No design = BAD design. (In a perfect world,
- * people like me would be executed for this improper behaviour).
+ * This is probably a Bad Thing.
  */
 
 #include <stdlib.h>
@@ -26,8 +25,9 @@
 #include "serial.h"
 #include "monitor.h"
 #include "disasm.h"
+#include "breakpoint.h"
 #include "sfile.h"
-#include "ui_txt.h"
+#include "ui.h"
 #include "rc.h"
 
 
@@ -46,6 +46,7 @@ void CmdGetData(struct cmd *cmd);
 void CmdSetData(struct cmd *cmd);
 void CmdGetState(struct cmd *cmd);
 void CmdExec(struct cmd *cmd);
+void CmdBP(struct cmd *cmd);
 void CmdCls(struct cmd *cmd);
 void CmdHelp(struct cmd *cmd);
 void CmdQuit(struct cmd *cmd);
@@ -55,7 +56,7 @@ void CmdSyntaxErr(struct cmd *cmd);
 int disasm_mode;			/* disassembly output mode */
 
 struct cmd cmd;				/* message struct for UI<-->main communication */
-struct packet *sp, *rp;		/* packets for main<-->hc11 communication */
+struct packet *sp, *rp;		/* packets for main<-->HC11 communication */
 
 /* default HC11 environment if no rc-files are found */
 struct mcu_env env = {
@@ -78,7 +79,7 @@ void main(int argc, char **argv) {
 
 	/* command loop */
 	do {
-		memset(&cmd, 0, sizeof(struct cmd));
+		//memset(&cmd, 0, sizeof(struct cmd));
 		if (GetCommand(&cmd) == -1)		/* get command from user */
 			continue;					/* handle errors in UI module */
 
@@ -89,6 +90,7 @@ void main(int argc, char **argv) {
 			case CMD_SET_DATA: CmdSetData(&cmd); break;
 			case CMD_GET_STATE: CmdGetState(&cmd); break;
 			case CMD_EXEC: CmdExec(&cmd); break;
+			case CMD_BP: CmdBP(&cmd); break;
 			case CMD_CLS: CmdCls(&cmd); break;
 			case CMD_HELP: CmdHelp(&cmd); break;
 			case CMD_QUIT: CmdQuit(&cmd); break;
@@ -220,7 +222,7 @@ void CmdSetData(struct cmd *cmd) {
 
 
 void CmdGetState(struct cmd *cmd) {
-	printf(": not implemented\n");
+	ShowMsg(": not implemented\n");
 
 	/* show state output */
 	ShowCommand(cmd);
@@ -234,6 +236,41 @@ void CmdExec(struct cmd *cmd) {
 	memcpy((char *)sp+PACKET_HDR_SIZE, cmd, sizeof(struct cmd));
 	SendPacket(sp);
 	DestroyPacket(sp);
+}
+
+
+/* Breakpoints. */
+void CmdBP(struct cmd *cmd) {
+	int i;
+	
+	if (cmd->mod == CMD_BP_LIST) {
+		for (i=0; i<MAX_BREAKPOINTS; i++) {
+			cmd->data = GetBP(i);
+			cmd->dsize = sizeof(struct breakpoint);
+			if (cmd->data)
+				ShowCommand(cmd);
+		}
+	} else {
+		sp = CreatePacket(sizeof(struct cmd));
+		sp->cmd = CMD_BP;
+		memcpy((char *)sp+PACKET_HDR_SIZE, cmd, sizeof(struct cmd));
+		
+		if (cmd->mod == CMD_BP_SET) {
+			if (FindBP(cmd->addr1) == -1) {
+				//SendPacket(sp);		/* set breakpoint at HC11 */
+				//rp = RecvPacket();	/* get old byte */
+				//if(!SetBP(cmd->addr1, rp->cmd))
+				if(!SetBP(cmd->addr1, 0))
+					ShowMsg(": too many breakpoints\n");
+			} else
+				ShowMsg(": duplicate breakpoint\n");
+		} else if (cmd->mod == CMD_BP_CLEAR) {
+			if (ClearBP(cmd->addr1));
+		}
+		
+		DestroyPacket(sp);
+		//DestroyPacket(rp);
+	}
 }
 
 
@@ -271,7 +308,7 @@ int Init(void) {
 	/* initialize UI */
 	if (InitUI() == -1)
 		goto UI_fail;
-
+	
 	/* setup communications */
 	if (InitComm() == -1)
 		goto Comm_fail;
@@ -279,11 +316,11 @@ int Init(void) {
 	/* get options from rc-files or user and install monitor */
 	if (GetEnvOpt_RC(&env) == -1)
 		GetEnvOpt_UI(&env);
-	printf(": installing monitor, please wait ...\n");
+	ShowMsg("installing monitor, please wait ...\n");
 	if (InstallMonitor(&env) == -1)
 		goto Monitor_fail;
-	printf(": monitor installed\n");
-	
+	ShowMsg("monitor installed\n");
+
 	return 0;
 
   Monitor_fail:

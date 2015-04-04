@@ -1,9 +1,10 @@
 
-#ifndef UI_NC_H
-#define UI_NC_H
+#ifndef UI_H
+#define UI_H
 
 
 #include "command.h"
+#include "lex.h"
 #include "monitor.h"
 
 
@@ -30,17 +31,20 @@ int CleanupUI(void);
 int ConfigUI(void);
 int GetCommand(struct cmd *cmd);
 int ShowCommand(struct cmd *cmd);
+int ShowMsg(char *msg);
 int GetEnvOpt_UI(struct mcu_env *env);
 /* command routines */
-//int ShowState(struct cmd *scmd);
-//int ShowCode(struct cmd *scmd);
-//int ShowData(struct cmd *scmd);
+int ShowState(struct cmd *scmd);
+int ShowCode(struct cmd *scmd);
+int ShowData(struct cmd *scmd);
+int ShowBP(struct cmd *scmd);
 //void ShowDisasmMode(struct cmd *cmd);
-//void Cls(struct cmd *scmd);
-//void Help(struct cmd *scmd);
-//void SyntaxError(struct cmd *scmd);
-/* internal routine */
-//char GetHex(char c);
+void Cls(struct cmd *scmd);
+void Help(struct cmd *scmd);
+void SyntaxError(struct cmd *scmd);
+/* internal help routines */
+int GetAddr(char **str, struct token *t, struct cmd *cmd, int opt);
+char GetHex(char c);
 
 
-#endif UI_NC_H
+#endif UI_H

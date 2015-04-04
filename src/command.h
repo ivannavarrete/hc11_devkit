@@ -1,6 +1,6 @@
 
-#ifndef MESSAGE_H
-#define MESSAGE_H
+#ifndef COMMAND_H
+#define COMMAND_H
 
 
 /* Command structure for UI and main program communication. It is general enough
@@ -25,8 +25,9 @@ struct cmd {
 #define CMD_GET_STATE		3
 #define CMD_SET_STATE		4
 #define CMD_EXEC			5
-#define CMD_SET_CODE		6	/* assemble a file and upload to HC11 */
-#define CMD_SYNTAX_ERR		7	/* syntax error */
+#define CMD_BP				6
+#define CMD_SET_CODE		7	/* assemble a file and upload to HC11 */
+#define CMD_SYNTAX_ERR		8	/* syntax error */
 
 #define CMD_CLS				203	/* clear command screen */
 #define CMD_GET_CODE		204	/* disassemble code */
@@ -39,6 +40,9 @@ struct cmd {
 #define CMD_DATA_B			00	/* CMD_GET_DATA: bytes */
 #define CMD_DATA_W			01	/* CMD_GET_DATA: words */
 #define CMD_DATA_BF			02	/* CMD_SET_DATA: block fill */
+#define CMD_BP_SET			03	/* CMD_BP: set breakpoint */
+#define CMD_BP_CLEAR		04	/* CMD_BP: clear breakpoint */
+#define CMD_BP_LIST			05	/* CMD_BP: list breakpoints */
 
 
-#endif MESSAGE_H
+#endif COMMAND_H

@@ -30,6 +30,9 @@ _packet_csum:		equ	6
 ; packet commands (must be same as in monitor.h)
 cmd_hw_ok:			equ	98
 cmd_hw_err:			equ	99
+; command modifiers (must be sabe as in command.h)
+cmd_bp_set:			equ	3
+cmd_bp_clear:		equ	4
 
 
 ;*******************************************************************************
@@ -64,7 +67,7 @@ main:
 		; get next command
 		jmp		main
 
-		; don't change the jump table order; it follows monitor.h
+		; don't change the jump table order; it follows command.h
 max_cmd			equ	7
 jmp_table:
 		fdb		cmd_nop
@@ -73,6 +76,7 @@ jmp_table:
 		fdb		cmd_get_state
 		fdb		cmd_set_state
 		fdb		cmd_exec
+		fdb		cmd_bp
 		fdb		cmd_set_code
 		fdb		cmd_err
 
@@ -339,12 +343,29 @@ cmd_exec:
 		
 		rts
 
+
+;=== cmd_bp ====================================================================
+cmd_bp:
+		ldaa	#$06
+		jsr		debug_ac
+
+		ldaa	packet_data+1			; get subcommand (set/clear)
+		cmpa	cmd_bp_set
+		beq		_bp_set
+
+										; clear breakpoint
+
+_bp_set:								; set breakpoint
+
+		rts
+
+
 ;=== cmd_set_code ==============================================================
 cmd_set_code:
 		; not implemented
 		; isn't even necessary since it's done by cmd_set_data and logic
 		; at PC side
-		ldaa	#$05
+		ldaa	#$07
 		jsr		debug_ac
 
 		rts
@@ -355,6 +376,13 @@ cmd_err:
 		ldaa	#$FE
 		jsr		debug_ac
 		rts
+
+
+;*******************************************************************************
+;*** breakpoint code ***********************************************************
+;*******************************************************************************
+breakpoint:
+		jmp		init
 
 
 ;*******************************************************************************
@@ -463,7 +491,7 @@ v_tic1:				fdb	def_int
 v_rti:				fdb	def_int
 v_irq:				fdb	def_int
 v_xirq:				fdb	def_int
-v_softint:			fdb	def_int
+v_softint:			fdb	breakpoint
 v_ill_opcode:		fdb	def_int
 v_cop_fail:			fdb	def_int
 v_clk_fail:			fdb	def_int

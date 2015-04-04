@@ -4,7 +4,7 @@
 ;
 ; 	description:
 ; The MCU must be placed into bootstrap mode. Then this program is downloaded
-; to the MCU and placed at address $0000-$00FF. It *must not* be larger than
+; to the MCU and placed at address $0000-$00FF. This code *must* be exactly
 ; 256 bytes.
 
 PORTD		equ		$0008

@@ -32,7 +32,7 @@
 
 #include "monitor.h"
 #include "sfile.h"
-#include "ui_txt.h"
+#include "ui.h"
 #include "serial.h"
 
 
@@ -48,7 +48,7 @@ int InstallMonitor(struct mcu_env *env) {
 	
 	/* prepare the setup code, before uploading it */
 	sf = CreateSFile("./hc11/setup.s19", SFILE_UNCOMPRESSED);
-	if (sf == NULL)
+	if (sf == NULL || sf->dsize < 256)
 		return -1;
 	ConfigEnvOptions(env, sf->data);
 
@@ -78,7 +78,7 @@ int InstallMonitor(struct mcu_env *env) {
 
 
 /* Alter monitor setup code, to reflect user's choise of environment, and con-
- * figuration of time protected systems. */
+ * figuration of time protected systems. See setup.asm for more info. */
 int ConfigEnvOptions(struct mcu_env *env, char *buf) {
 	buf[0xFA] = env->talker_page<<4;
 	buf[0xFA] |= env->mode;
