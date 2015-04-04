@@ -4,11 +4,12 @@
 ;
 ; 	description:
 ; The MCU must be placed into bootstrap mode. Then this program is downloaded
-; to the MCU and placed at address $0000-$00FF. It *must* not be larger than
+; to the MCU and placed at address $0000-$00FF. It *must not* be larger than
 ; 256 bytes.
 
 PORTD		equ		$0008
 TMSK2		equ		$0024
+BAUD		equ		$002B
 SCCR1		equ		$002C
 SCCR2		equ		$002D
 SCSR		equ		$002E
@@ -26,17 +27,8 @@ talker_e	equ		$1FFF		; end offset of talker
 
 ;		opt l,c
 
-;PORTC		equ		$0003
-;DDRC		equ		$0007
-
-;		org $0000
-;		ldx		#$1000
-;		bset	DDRC,X #$FF
-;		bset	PORTC,X #$FF
-;		bra		*
-
 		org $0000
-start:	lds		#$00A0
+start:	lds		#$00F0
 		ldx		#$1000
 		
 		; enable/disable on-chip ROM and EEPROM
@@ -83,22 +75,18 @@ next3:	ldaa	OPTION,X
 		ldaa	TMSK2,X
 		ora		options1
 		staa	TMSK2,X
-
-		; set up interrupt vectors at $FFC0-$FFFF
-		; MUST SWITCH TO EXPANDED MODE FIRST, STOOPID!
-		ldy		#$FFC0
-		bset	SCCR2,X #$01	; send break
-		brset	PORTD,X #$01 *	; wait for start bit
-		bclr	SCCR2,X #$01	; clear break
-i_recv:	brclr	SCSR,X #$20 *	; wait for byte to arrive
-		ldaa	SCDR,X			; read byte
-		staa	0,Y				; store byte
-		staa	SCDR,X			; echo byte
-		iny
-		bne		i_recv
-
+		
+		; Note this ugly hack! We must have the register-remap code at address
+		; $40 or greater, so that we can remap regs to the same page as RAM.
+		; Best thing would be to insert some useful code in here instead.
+		; Also, we *must* remap registers (and everyting else remappable)
+		; before changing MCU mode. MCU mode should be the last environmental
+		; change, after that the upload of int vectors and monitor, and after
+		; that a jump to monitor. Do *not* alter this flow of execution.
+		jmp		$40
+		org	$0040
 		; remap RAM and MCU registers
-		; do it when area at 0-$40 is no longer used and talker is
+		; do it when area at 0-$40 is no longer used and monitor is
 		; not yet downloaded, just in case
 		ldaa	options4
 		staa	INIT,X
@@ -111,8 +99,33 @@ i_recv:	brclr	SCSR,X #$20 *	; wait for byte to arrive
 		clrb
 		xgdx
 
+		; put the MCU into desired mode. Do it befor uploading anything more.
+		brclr	options5 #$01 s_chip
+		bset	HPRIO,X #$20
+s_chip:	brset	options5 #$02 smod
+		bclr	HPRIO,X #$40
+smod:
+
+		; change baud rate to 9600bps
+		ldaa	#$30
+		staa	BAUD,X
+		
+		; set up interrupt vectors at $FFC0-$FFFF
+		; MUST SWITCH TO EXPANDED MODE FIRST, ST00PID!
+		ldy		#$FFC0
+		bset	SCCR2,X #$01	; send break
+		brset	PORTD,X #$01 *	; wait for start bit
+		bclr	SCCR2,X #$01	; clear break
+i_recv:	brclr	SCSR,X #$20 *	; wait for byte to arrive
+		ldaa	SCDR,X			; read byte
+		staa	0,Y				; store byte
+		staa	SCDR,X			; echo byte
+		iny
+		bne		i_recv
+
 		; download talker
 		ldaa	options5		; Y = talker addr
+		anda	#$F0
 		clrb
 		addd	#talker_e
 		std		talker_end
@@ -130,34 +143,33 @@ t_recv:	brclr	SCSR,X #$20 *
 		cpy		talker_end
 		bne		t_recv
 
-		; put the MCU into desired mode
-		brclr	options5 #$01 s_chip
-		bset	HPRIO,X #$20
-s_chip:	brset	options5 #$02 smod
-		bclr	HPRIO,X #$40
-smod:
-		jmp		debug
-		
 		; pass control to the talker
 		jmp		talker
 
 ; Subroutine to delay for 10ms (if E=2Mhz)
 dly10:	pshx
-		ldx		#$0D06		; 3334*6*500ns = 10ms
+		ldx		#$0D06			; 3334*6*500ns = 10ms
 dloop:	dex
 		bne		dloop
 		pulx
 		rts
 
-PORTC	equ		#$0003
-DDRC	equ		#$0007
+; Debug routine. Outputs ones on PORTA. Connect a LED to pin 7 of PORTA and
+; call this routine. If the LED doesn't lit up, the code is never executed,
+; which means it crashes somewhere before. Place the call further and further
+; back to pinpoint the point of failure.
+PORTA	equ		#$0000
+PACTL	equ		#$0026
+;PORTC	equ		#$0003
+;DDRC	equ		#$0007
 
-debug:	bset	DDRC,X #$FF
-		bset	PORTC,X #$FF
+debug:	bset	PACTL,X #$80
+		bset	PORTA,X #$80
 		bra		*
 		
 
 talker_end:		fcb 0,0
+
 
 ; User selected options. Theese are setup by the Control program before this
 ; program is downloaded to the MCU. Use several option bytes to avoid shifting

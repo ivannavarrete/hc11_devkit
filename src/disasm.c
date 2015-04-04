@@ -6,11 +6,9 @@
 #include "disasm.h"
 
 
-char *Disasm(unsigned char *data, int len, int mode);
-int DisasmOp(unsigned char *data, int offset, char *buf, int mode);
-
-
-int line = 80;
+struct dis_instr *CreateDisasm(unsigned char *code, int len);
+int DestroyDisasm(struct dis_instr *da_list);
+int DisasmOp(unsigned char *data, int len, struct dis_instr *instr);
 
 
 struct opcode ops[] = {
@@ -28,8 +26,8 @@ struct opcode ops[] = {
 	{"brset",4,6,AMODE_DIR,OMODE_8_3}, {"brclr",4,6,AMODE_DIR,OMODE_8_3},
 	{"bset",3,6,AMODE_DIR,OMODE_8_2}, {"bclr",3,6,AMODE_DIR,OMODE_8_2},
 	{"tab",1,2,AMODE_INH,OMODE_NONE}, {"tba",1,2,AMODE_INH,OMODE_NONE},
-	{"mult_op",0,0,AMODE_INH,OMODE_NONE}, {"daa",1,2,AMODE_INH,OMODE_NONE},
-	{"mult_op",0,0,AMODE_INH,OMODE_NONE}, {"aba",1,2,AMODE_INH,OMODE_NONE},
+	{"mult_op",1,0,AMODE_INH,OMODE_NONE}, {"daa",1,2,AMODE_INH,OMODE_NONE},
+	{"mult_op",1,0,AMODE_INH,OMODE_NONE}, {"aba",1,2,AMODE_INH,OMODE_NONE},
 	{"bset",3,7,AMODE_INDX,OMODE_8_2}, {"bclr",3,7,AMODE_INDX,OMODE_8_2},
 	{"brset",4,7,AMODE_INDX,OMODE_8_3}, {"brclr",4,7,AMODE_INDX,OMODE_8_3},
 	/* 0x20 */
@@ -51,46 +49,46 @@ struct opcode ops[] = {
 	{"pshx",1,4,AMODE_INH,OMODE_NONE}, {"mul",1,10,AMODE_INH,OMODE_NONE},
 	{"wai",1,14,AMODE_INH,OMODE_NONE}, {"swi",1,14,AMODE_INH,OMODE_NONE},
 	/* 0x40 */
-	{"nega",1,2,AMODE_INH,OMODE_NONE}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
-	{"invalid",0,0,AMODE_INH,OMODE_NONE}, {"coma",1,2,AMODE_INH,OMODE_NONE},
-	{"lsra",1,2,AMODE_INH,OMODE_NONE}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
+	{"nega",1,2,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"coma",1,2,AMODE_INH,OMODE_NONE},
+	{"lsra",1,2,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
 	{"rora",1,2,AMODE_INH,OMODE_NONE}, {"asra",1,2,AMODE_INH,OMODE_NONE},
 	{"asla",1,2,AMODE_INH,OMODE_NONE}, {"rola",1,2,AMODE_INH,OMODE_NONE},
-	{"deca",1,2,AMODE_INH,OMODE_NONE}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
+	{"deca",1,2,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
 	{"inca",1,2,AMODE_INH,OMODE_NONE}, {"tsta",1,2,AMODE_INH,OMODE_NONE},
-	{"invalid",0,0,AMODE_INH,OMODE_NONE}, {"clra",1,2,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"clra",1,2,AMODE_INH,OMODE_NONE},
 	/* 0x50 */
-	{"negb",1,2,AMODE_INH,OMODE_NONE}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
-	{"invalid",0,0,AMODE_INH,OMODE_NONE}, {"comb",1,2,AMODE_INH,OMODE_NONE},
-	{"lsrb",1,2,AMODE_INH,OMODE_NONE}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
+	{"negb",1,2,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"comb",1,2,AMODE_INH,OMODE_NONE},
+	{"lsrb",1,2,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
 	{"rorb",1,2,AMODE_INH,OMODE_NONE}, {"asrb",1,2,AMODE_INH,OMODE_NONE},
 	{"aslb",1,2,AMODE_INH,OMODE_NONE}, {"rolb",1,2,AMODE_INH,OMODE_NONE},
-	{"decb",1,2,AMODE_INH,OMODE_NONE}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
+	{"decb",1,2,AMODE_INH,OMODE_NONE}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
 	{"incb",1,2,AMODE_INH,OMODE_NONE}, {"tstb",1,2,AMODE_INH,OMODE_NONE},
-	{"invalid",0,0,AMODE_INH,OMODE_NONE}, {"clrb",1,2,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"clrb",1,2,AMODE_INH,OMODE_NONE},
 	/* 0x60 */	
-	{"neg",2,6,AMODE_INDX,OMODE_8_1}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
-	{"invalid",0,0,AMODE_INH,OMODE_NONE}, {"com",2,6,AMODE_INDX,OMODE_8_1},
-	{"lsr",2,6,AMODE_INDX,OMODE_8_1}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
+	{"neg",2,6,AMODE_INDX,OMODE_8_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"com",2,6,AMODE_INDX,OMODE_8_1},
+	{"lsr",2,6,AMODE_INDX,OMODE_8_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
 	{"ror",2,6,AMODE_INDX,OMODE_8_1}, {"asr",2,6,AMODE_INDX,OMODE_8_1},
 	{"asl",2,6,AMODE_INDX,OMODE_8_1}, {"rol",2,6,AMODE_INDX,OMODE_8_1},
-	{"dec",2,6,AMODE_INDX,OMODE_8_1}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
+	{"dec",2,6,AMODE_INDX,OMODE_8_1}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
 	{"inc",2,6,AMODE_INDX,OMODE_8_1}, {"tst",2,6,AMODE_INDX,OMODE_8_1},
 	{"jmp",2,3,AMODE_INDX,OMODE_8_1}, {"clr",2,6,AMODE_INDX,OMODE_8_1},
 	/* 0x70 */
-	{"neg",3,6,AMODE_EXT,OMODE_8_2}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
-	{"invalid",0,0,AMODE_INH,OMODE_NONE}, {"com",3,6,AMODE_EXT,OMODE_8_2},
-	{"lsr",3,6,AMODE_EXT,OMODE_8_2}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
+	{"neg",3,6,AMODE_EXT,OMODE_8_2}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
+	{"invalid",1,0,AMODE_INH,OMODE_NONE}, {"com",3,6,AMODE_EXT,OMODE_8_2},
+	{"lsr",3,6,AMODE_EXT,OMODE_8_2}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
 	{"ror",3,6,AMODE_EXT,OMODE_8_2}, {"asr",3,6,AMODE_EXT,OMODE_8_2},
 	{"asl",3,6,AMODE_EXT,OMODE_8_2}, {"rol",3,6,AMODE_EXT,OMODE_8_2},
-	{"dec",3,6,AMODE_EXT,OMODE_8_2}, {"invalid",0,0,AMODE_INH,OMODE_NONE},
+	{"dec",3,6,AMODE_EXT,OMODE_8_2}, {"invalid",1,0,AMODE_INH,OMODE_NONE},
 	{"inc",3,6,AMODE_EXT,OMODE_8_2}, {"tst",3,6,AMODE_EXT,OMODE_8_2},
 	{"jmp",3,3,AMODE_EXT,OMODE_8_2}, {"clr",3,6,AMODE_EXT,OMODE_8_2},
 	/* 0x80 */
 	{"suba",2,2,AMODE_IMM,OMODE_8_1}, {"cmpa",2,2,AMODE_IMM,OMODE_8_1},
 	{"sbca",2,2,AMODE_IMM,OMODE_8_1}, {"subd",3,4,AMODE_IMM,OMODE_16_1},
 	{"anda",2,2,AMODE_IMM,OMODE_8_1}, {"bita",2,2,AMODE_IMM,OMODE_8_1},
-	{"ldaa",2,2,AMODE_IMM,OMODE_8_1}, {"invalid",0,0,AMODE_IMM,OMODE_NONE},
+	{"ldaa",2,2,AMODE_IMM,OMODE_8_1}, {"invalid",1,0,AMODE_IMM,OMODE_NONE},
 	{"eora",2,2,AMODE_IMM,OMODE_8_1}, {"adca",2,2,AMODE_IMM,OMODE_8_1},
 	{"oraa",2,2,AMODE_IMM,OMODE_8_1}, {"adda",2,2,AMODE_IMM,OMODE_8_1},
 	{"cpx",3,4,AMODE_IMM,OMODE_16_1}, {"bsr",2,6,AMODE_REL,OMODE_8_1},
@@ -126,10 +124,10 @@ struct opcode ops[] = {
 	{"subb",2,2,AMODE_IMM,OMODE_8_1}, {"cmpb",2,2,AMODE_IMM,OMODE_8_1},
 	{"sbcb",2,2,AMODE_IMM,OMODE_8_1}, {"addd",3,4,AMODE_IMM,OMODE_16_1},
 	{"andb",2,2,AMODE_IMM,OMODE_8_1}, {"bitb",2,2,AMODE_IMM,OMODE_8_1},
-	{"ldab",2,2,AMODE_IMM,OMODE_8_1}, {"invalid",0,0,AMODE_IMM,OMODE_NONE},
+	{"ldab",2,2,AMODE_IMM,OMODE_8_1}, {"invalid",1,0,AMODE_IMM,OMODE_NONE},
 	{"eorb",2,2,AMODE_IMM,OMODE_8_1}, {"adcb",2,2,AMODE_IMM,OMODE_8_1},
 	{"orab",2,2,AMODE_IMM,OMODE_8_1}, {"addb",2,2,AMODE_IMM,OMODE_8_1},
-	{"ldd",3,3,AMODE_IMM,OMODE_16_1}, {"mult_op",0,0,AMODE_IMM,OMODE_NONE},
+	{"ldd",3,3,AMODE_IMM,OMODE_16_1}, {"mult_op",1,0,AMODE_IMM,OMODE_NONE},
 	{"ldx",3,3,AMODE_IMM,OMODE_16_1}, {"stop",1,2,AMODE_INH,OMODE_NONE},
 	/* 0xD0 */
 	{"subb",2,3,AMODE_DIR,OMODE_8_1}, {"cmpb",2,3,AMODE_DIR,OMODE_8_1},
@@ -161,39 +159,87 @@ struct opcode ops[] = {
 };
 
 
-int DisasmOp(unsigned char *code, int len, char *buf, int mode) {
+/* Disassemble code and place result in allocated linked list. Unfinished
+ * instructions will not be disassembled. */
+struct dis_instr *CreateDisasm(unsigned char *code, int len) {
+	struct dis_instr *instr1, *instr2, *instr_list;
+	int i, j;
+
+	/* disassemble instructions and place in buffer */
+	instr_list = instr1 = instr2 = malloc(sizeof(struct dis_instr));
+	if (instr_list == NULL)
+		return NULL;
+	
+	for (i=j=0; i<len; i+=j) {
+		j = DisasmOp(code+i, len-i, instr2);
+		if (j == -1) {		/* (j == -1) when the instruction wasn't complete */
+			instr1->next = NULL;
+			free(instr2);
+			break;
+		}
+
+		instr1 = instr2;
+		instr2 = malloc(sizeof(struct dis_instr));
+		memset(instr2, 0, sizeof(struct dis_instr));
+		if (instr2 == NULL) {
+			instr1->next = NULL;
+			return instr_list;
+		}
+		instr1->next = instr2;
+	}
+
+	return instr_list;
+}
+
+
+/* Destroy disassembly list. */
+int DestroyDisasm(struct dis_instr *da_list) {
+	struct dis_instr *instr;
+
+	/* free allocated memories */
+	for (instr = da_list; da_list != NULL; instr = da_list) {
+		da_list = instr->next;
+		free(instr);
+	}
+	
+	return 0;
+}
+
+
+/* Disassembles the next instruction in code array. If instruction is longer
+ * than len bytes, it is not disassembled. Returns the number of bytes in
+ * disassembled instruction or -1 if the instruction wasn't completely in 
+ * the code array. */
+int DisasmOp(unsigned char *code, int len, struct dis_instr *instr) {
 	struct opcode op = ops[code[0]];
-	char bytes[4], cycles[4], mcode[4], opbuf1[32], opbuf2[32], opbuf3[32];
+	char mcode[4], opbuf1[32], opbuf2[32], opbuf3[32];
 	int operand1, operand2, operand3;
-	int i, width = 0;
+	int i;
 
 	/* check if the complete instruction is in the data array */
-	if (op.bytes > len) return -1;
+	if (op.bytes > len)
+		return -1;
 
 	/* flush buffers */
-	buf[0] = 0;
 	opbuf1[0] = 0;
 	opbuf2[0] = 0;
 	opbuf3[0] = 0;
 
-	/* put machine code into buffer */
-	if (mode & DMODE_CODE) {
-		for (i=0; i<op.bytes;i++) {
-			sprintf(mcode, "%02X ", code[i]);
-			strcat(buf, mcode);
-		}
+	/* put address into structure */
+	/* ... */
 
-		for (i=strlen(buf); i<line/4; i++)
-			strcat(buf, " ");
-		width = line / 4;
+	/* put machine code into structure */
+	for (i=0; i<op.bytes;i++) {
+		sprintf(mcode, "%02X ", code[i]);
+		strcat(instr->mcode, mcode);
 	}
 
-	/* put mnemonic into buffer */
-	strcat(buf, op.opcode);
-	for (i=strlen(buf); i<width+8; i++)
-		strcat(buf, " ");
+	/* put mnemonic into structure */
+	strcpy(instr->instr, op.opcode);
+	for (i=0; i<8-strlen(instr->instr); i++)
+		strcat(instr->instr, " ");
 
-	/* put operands into buffer */
+	/* put operands into structure */
 	switch (op.operands) {				/* parse operands */
 		case OMODE_8_3:
 			operand3 = code[3];
@@ -210,120 +256,79 @@ int DisasmOp(unsigned char *code, int len, char *buf, int mode) {
 		default:
 	}
 
-	switch (op.addr_mode) {				/* put operands into buffer */
+	switch (op.addr_mode) {				/* put operands into structure */
 		case AMODE_INDX:
 		case AMODE_INDY:
-			strcat(buf, opbuf1);
-			if (op.addr_mode == AMODE_INDX)	strcat(buf, ",X");
-			else strcat(buf, ",Y");
+			strcat(instr->instr, opbuf1);
+			if (op.addr_mode == AMODE_INDX)	strcat(instr->instr, ",X");
+			else strcat(instr->instr, ",Y");
 			if (op.operands == OMODE_8_2 || op.operands == OMODE_8_3) {
-				strcat(buf, " #$");
-				strcat(buf, opbuf2);
+				strcat(instr->instr, " #$");
+				strcat(instr->instr, opbuf2);
 			}
 			if (op.operands == OMODE_8_3) {
-				strcat(buf, " $");
-				strcat(buf, opbuf3);
+				strcat(instr->instr, " $");
+				strcat(instr->instr, opbuf3);
 			}
 			break;
 		case AMODE_DIR:
-			strcat(buf, "$");
-			strcat(buf, opbuf1);
+			strcat(instr->instr, "$");
+			strcat(instr->instr, opbuf1);
 			if (op.operands == OMODE_8_2 || op.operands == OMODE_8_3) {
-				strcat(buf, " #$");
-				strcat(buf, opbuf2);
+				strcat(instr->instr, " #$");
+				strcat(instr->instr, opbuf2);
 			}
 			if (op.operands == OMODE_8_3) {
-				strcat(buf, " $");
-				strcat(buf, opbuf3);
+				strcat(instr->instr, " $");
+				strcat(instr->instr, opbuf3);
 			}
 			break;
 		case AMODE_IMM:
-			strcat(buf, "#$");
-			strcat(buf, opbuf1);
+			strcat(instr->instr, "#$");
+			strcat(instr->instr, opbuf1);
 			break;
 		case AMODE_REL:
 		case AMODE_EXT:
-			strcat(buf, "$");
-			strcat(buf, opbuf1);
+			strcat(instr->instr, "$");
+			strcat(instr->instr, opbuf1);
 			break;
 		case AMODE_INH:
 		default:
 	}
 
-	/* put number of bytes for this instruction into buffer */
-	if (mode & DMODE_BYTES) {
-		sprintf(bytes, "%d", op.bytes);
-		for (i=strlen(buf); i<line-15; i++)
-			strcat(buf, " ");
-		strcat(buf, bytes);
-	}
+	/* put number of bytes for this instruction into structure */
+	sprintf(instr->bytes, "%d", op.bytes);
 
-	/* put number of cycles for this instruction into buffer */
-	if (mode & DMODE_CYCLES) {
-		sprintf(cycles, "%d", op.cycles);
-		for (i=strlen(buf); i<line-10; i++)
-			strcat(buf, " ");
-		strcat(buf, cycles);
-	}
+	/* put number of cycles for this instruction into structure */
+	sprintf(instr->cycles, "%d", op.cycles);
 
 	return op.bytes;
-}
-
-/* Disassemble code and place result in allocated buffer. The caller is
- * responsible for freeing the buffer. Unfinished instructions will not be
- * disassembled */
-char *Disasm(unsigned char *code, int len, int mode) {
-	char *buf;
-	int buflen;
-	int i, j;
-
-	buf = malloc(1);
-	if (!buf)
-		return NULL;
-	buf[0] = 0;
-
-	/* disassemble instructions and place in buffer */
-	for (i=j=0; i<len; i+=j) {
-		buflen = strlen(buf);
-		buf = realloc(buf, buflen+line); /* resize buffer to fit another line */
-		if (!buf) {
-			free(buf);
-			return NULL;
-		}
-		
-		j = DisasmOp(code+i, len-i, buf+buflen, mode);
-		if (j == -1)		/* (j == -1) when the instruction wasn't complete */
-			break;
-		strcat(buf, "\n");
-	}
-
-	buflen = strlen(buf);
-	realloc(buf, buflen);
-	return buf;
 }
 
 
 /*
 int main(void) {
-	unsigned char data[] = {0xFE, 0x00, 0x4B, 0x1C, 0x07, 0xFF, 0x1C, 0x03,
-							0xFF, 0x20, 0xFE, 0x10, 0x00, 0xFE, 0x00, 0x55};
-	char *tmp;
+	unsigned char code[] = {0xFE, 0x00, 0x4B, 0x1C, 0x07, 0xFF, 0x1C, 0x03,
+							0xFF, 0x20, 0xFE, 0x10, 0x00};
+	struct dis_instr *list, *instr;
 
-	tmp = Disasm(data, 15, DMODE_CODE | DMODE_BYTES | DMODE_CYCLES);
-	if (tmp != NULL)
-		printf("%s", tmp);
-	else
-		printf("disassembly failure\n");
+	list = instr = Disasm(code, 13);
+	if (list == NULL) {
+		printf("no instructions disassembled\n");
+		return 1;
+	}
 
-	printf("\n\n");
+	while (instr != NULL) {
+		printf("%s %s %s %s\n", instr->mcode, instr->instr, instr->bytes,
+								instr->cycles);
+		instr = instr->next;
+	}
 
-	tmp = Disasm(data, 16, DMODE_CODE | DMODE_BYTES | DMODE_CYCLES);
-	if (tmp != NULL)
-		printf("%s", tmp);
-	else
-		printf("disassembly failure\n");
-	
-	free(tmp);
+	while (list != NULL) {
+		instr = list;
+		list = instr->next;
+		free(instr);
+	}
 
 	return 0;
 }

@@ -10,20 +10,21 @@
 #include "sfile.h"
 
 
-int SendSFile(char *file, int dev, int options);
+int SendSFile(char *file, int options);
 int ParseSFile(char *file, char *buf, int options);
 unsigned char GetByte(char *str);
 
-extern int SendData(int dev, char *buf, int len);
+/* serial.c */
+extern int SendData(char *buf, int len);
 
 
 /* Send an S record file to the device fd. If len_on is set then the length of
- * a line is sent before the address and/or data. If addr_on is set then the
+ * a line is sent before the address and data. If addr_on is set then the
  * memory load address of every record is sent before the data. 
  *
  *		[line length] [memory addr] <data>
  */
-int SendSFile(char *file, int dev, int options) {
+int SendSFile(char *file, int options) {
 	unsigned char *buf;
 	int fd, len;
 	
@@ -43,7 +44,7 @@ int SendSFile(char *file, int dev, int options) {
 	}
 
 	/* send file */
-	SendData(dev, buf, len);
+	SendData(buf, len);
 
 	free(buf);
 	return 0;
@@ -74,7 +75,7 @@ int ParseSFile(char *file, char *buf, int options) {
 		
 		/* handle records */
 		if (sfile[i] == 'S' && sfile[i+1] == '0') {			/* header record */
-			
+			/* ... */
 		} else if (sfile[i] == 'S' && sfile[i+1] == '1') {	/* data record */
 			/* parse line length */
 			if (options & SFILE_LEN_ON) {
@@ -114,6 +115,7 @@ int ParseSFile(char *file, char *buf, int options) {
 				buf[buflen] = GetByte(sfile+i+8+j*2);
 
 		} else if (sfile[i] == 'S' && sfile[i+1] == '9') {	/* term. record */
+			/* ... */
 		} else {
 			printf("S-file format error\n");
 			return -1;

@@ -1,4 +1,22 @@
 
+/*
+ * This module handles the physical communication. It can be replaced if the
+ * communication interface between PC and HC11 changes. Only the monitor.c
+ * and main.c modules should use the functions in this module.
+ *
+ * public routines:
+ * 		InitComm() sets up the communication interface on the PC side.
+ *		ConfigComm() reconfigures the communication interface.
+ * 		CleanupComm() shuts down the communication interface on the PC side.
+ *		SendData() sends a buffer to the HC11.
+ *		RecvData() receives a byte stream from the HC11.
+ * private routines:
+ * 		SaveComm() saves the current configuration of the interface.
+ *		RestoreComm() restores the previous configuration of the interface.
+ *
+ */
+
+
 #include <termios.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -9,51 +27,52 @@
 #include "serial.h"
 
 
-int InitComm();
-int CleanupComm(int dev);
-int SaveComm(int dev);
-int RestoreComm(int dev);
-int ConfigComm(int dev, int baud);
-int SendData(int dev, char *buf, int length);
-int RecvData(int dev, char *buf, int length);
+int InitComm(void);
+int CleanupComm(void);
+int SaveComm(void);
+int RestoreComm(void);
+int ConfigComm(int baud);
+int SendData(const unsigned char *buf, int length);
+int RecvData(unsigned char *buf, int length);
 
-int DebugGetSpeed(speed_t speed);
+int DebugGetSpeed(speed_t speed);		/* debug routine */
 
 
 struct termios org_mode;
-int baud = 1200;			/* device speed */
+int dev;								/* interface handler */
+const char *iface = "/dev/ttyS1";		/* default interface */
+int baud = 1200;						/* default initial interface speed */
 
 
-int InitComm() {
-	int dev;
-
-	dev = open("/dev/ttyS1", O_RDWR);
+int InitComm(void) {
+	dev = open(iface, O_RDWR | O_SYNC);
 	if (dev == -1) return -1;
-	if (SaveComm(dev)) return -1;
-	if (ConfigComm(dev, baud)) return -1;
+	if (SaveComm()) return -1;
+	if (ConfigComm(baud)) return -1;
 
 	return dev;
 }
 
 
-int CleanupComm(int dev) {
-	RestoreComm(dev);
+int CleanupComm(void) {
+	RestoreComm();
 	close(dev);
 	return 0;
 }
 
 
-int SaveComm(int dev) {
+int SaveComm(void) {
 	return tcgetattr(dev, &org_mode);
 }
 
 
-int RestoreComm(int dev) {
+int RestoreComm(void) {
 	return tcsetattr(dev, TCSANOW, &org_mode);
 }
 
 
-int ConfigComm(int dev, int baud) {
+/* Currently this only changes the baud rate. */
+int ConfigComm(int baud) {
 	struct termios ser;
 	speed_t speed;
 
@@ -74,36 +93,48 @@ int ConfigComm(int dev, int baud) {
 		default: speed = B1200; break;
 	}
 
-	if (tcgetattr(dev, &ser)) return -1;		/* get attributes */
-	
-	//printf("%i\n", DebugGetSpeed(cfgetispeed(&ser)));
-	//printf("%i\n", DebugGetSpeed(cfgetospeed(&ser)));
-	
-	if (cfsetospeed(&ser, speed)) return -1;	/* set output baud rate */
-	if (cfsetispeed(&ser, speed)) return -1;	/* set input baud rate */
-	
-	//printf("ispeed: %i\n", DebugGetSpeed(cfgetispeed(&ser)));
-	//printf("ospeed: %i\n", DebugGetSpeed(cfgetospeed(&ser)));
+	/* change input and output baud rate */
+	if (tcgetattr(dev, &ser)) return -1;
+	if (cfsetospeed(&ser, speed)) return -1;
+	if (cfsetispeed(&ser, speed)) return -1;
+	if (tcsetattr(dev, TCSADRAIN, &ser)) return -1;
 
 	return 0;
 }
 
 
-int SendData(int dev, char *buf, int length) {
+int SendData(const unsigned char *buf, int length, int s) {
 	int res;
+	unsigned char b1, b2;
 	int i;
 
-	for (i=res=0; i<length; i+=res) {
-		res = write(dev, buf+i, length-i);
-		if (res == -1) return -1;
+	for (i=5, b1=0xAA; i>0; i--) {
+		/* first we check if the other side is listening */
+		write(dev, &b1, 1);
+		read(dev, &b2, 1);
+
+		/* if it does, send the packet */
+		if (b2 == b1 ^ 0xFF) {
+			for (i=res=0; i<length; i+=res) {
+				res = write(dev, buf+i, length-i);
+				if (res == -1) return -1;
+			}
+			break;
+		/* if it doesn't, sleep for a while and try again */
+		} else
+			sleep(1);
 	}
 	
+	if (!i) return -1;
 	return 0;
 }
 
 
 /* not implemented */
-int RecvData(int dev, char *buf, int length) {
+int RecvData(unsigned char *buf, int length) {
+	printf("l: %d\n", length);
+	read(dev, buf, length);
+
 	return 0;
 }
 
