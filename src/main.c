@@ -1,6 +1,10 @@
 
 /*
  * main.c
+ *
+ * WARNING: This program was written practically without any analysis or design.
+ * This is probably a Bad Thing. No design = BAD design. (In a perfect world,
+ * people like me would be executed for this improper behaviour).
  */
 
 #include <stdlib.h>
@@ -19,8 +23,12 @@
 #include <linux/serial.h>
 
 #include "command.h"
+#include "serial.h"
 #include "monitor.h"
 #include "disasm.h"
+#include "sfile.h"
+#include "ui_txt.h"
+#include "rc.h"
 
 
 int Init(void);
@@ -43,29 +51,25 @@ void CmdHelp(struct cmd *cmd);
 void CmdQuit(struct cmd *cmd);
 void CmdSyntaxErr(struct cmd *cmd);
 
-/* serial.c */
-extern int InitComm(void);
-extern int CleanupComm();
-/* monitor.c */
-extern int InstallMonitor();
-extern struct packet *CreatePacket(int packet_size);
-extern int DestroyPacket(struct packet *p);
-extern int SendPacket(struct packet *p);
-extern struct packet *RecvPacket(void);
-/* disasm.c */
-extern struct dis_instr *CreateDisasm(unsigned short addr, unsigned char *code, int len);
-extern int DestroyDisasm(struct dis_instr *da_list);
-/* ui*.c */
-extern int InitUI(void);
-extern int CleanupUI(void);
-extern int GetCommand(struct cmd *cmd);
-extern int ShowCommand(struct cmd *cmd);
-
 
 int disasm_mode;			/* disassembly output mode */
 
 struct cmd cmd;				/* message struct for UI<-->main communication */
 struct packet *sp, *rp;		/* packets for main<-->hc11 communication */
+
+/* default HC11 environment if no rc-files are found */
+struct mcu_env env = {
+	MCU_MODE_EXPANDED,		/* mcu mode */
+	0,						/* on-chip ROM disabled */
+	1,						/* on-chip EEPROM enabled */
+	0,						/* registers page; mapped to 0x0000 */
+	0,						/* on-chip RAM page; mapped to 0x0000 */
+	0,						/* talker page; mapped to 0x0100-0x1FFF */
+	0,						/* timer rate */
+	0,						/* COP rate */
+	0,						/* irq pin is level triggered */
+	1						/* osc delay enabled */
+};
 
 
 void main(int argc, char **argv) {
@@ -75,10 +79,10 @@ void main(int argc, char **argv) {
 	/* command loop */
 	do {
 		memset(&cmd, 0, sizeof(struct cmd));
-		if (GetCommand(&cmd) == -1)		/* get command */
+		if (GetCommand(&cmd) == -1)		/* get command from user */
 			continue;					/* handle errors in UI module */
 
-		switch (cmd.cmd) {		/* execute command */
+		switch (cmd.cmd) {				/* execute command */
 			case CMD_GET_CODE: CmdGetCode(&cmd); break;
 			case CMD_SET_CODE: CmdSetCode(&cmd); break;
 			case CMD_GET_DATA: CmdGetData(&cmd); break;
@@ -118,7 +122,6 @@ void CmdGetCode(struct cmd *cmd) {
 	sp = CreatePacket(sizeof(struct cmd));
 	sp->cmd = CMD_GET_DATA;
 	memcpy((char *)sp+PACKET_HDR_SIZE, cmd, sizeof(struct cmd));
-	
 	SendPacket(sp);				/* send request for data */
 	rp = RecvPacket();			/* receive data */
 
@@ -135,11 +138,46 @@ void CmdGetCode(struct cmd *cmd) {
 
 
 void CmdSetCode(struct cmd *cmd) {
-	printf("%s\n", cmd->data);
-
-	//ParseSFile(cmd->data, 
+	struct sfile *sf;
+	int i = 0;
 	
+	sf = CreateSFile(cmd->data, SFILE_COMPRESSED);
 	free(cmd->data);
+
+	//printf("%08X %08X\n", sf->data, sf->dsize);
+	//for (i=0; i<sf->dsize; i++)
+	//	printf("%02X ", (unsigned char)(sf->data[i]));
+	//printf("\n");
+	//fflush(stdout);
+	//i = 0;
+
+	/* Divide s-file data into small chunks of data and send each separately.
+	 * This is because each s-file line can have a different HC11 address. */
+	while (sf != NULL && i < sf->dsize) {
+		/* adjust the command structure each time */
+		cmd->cmd = CMD_SET_DATA;
+		cmd->addr1 = sf->data[i+1]<<4 | sf->data[i+2];
+		cmd->dsize = sf->data[i]-3;
+		cmd->data = (sf->data)+i+3;
+
+		/* tell HC11 we'll be uploading data soon */
+		sp = CreatePacket(sizeof(struct cmd));
+		sp->cmd = CMD_SET_DATA;
+		memcpy((char *)sp+PACKET_HDR_SIZE, cmd, sizeof(struct cmd));
+		SendPacket(sp);
+		DestroyPacket(sp);
+
+		/* create packet with the data to upload and send it to HC11 */
+		sp = CreatePacket(cmd->dsize);
+		memcpy((char *)sp+PACKET_HDR_SIZE, cmd->data, cmd->dsize);
+		SendPacket(sp);
+		DestroyPacket(sp);
+
+		i += sf->data[i];
+	}
+		
+	/* free data */
+	DestroySFile(sf);
 }
 
 
@@ -148,7 +186,6 @@ void CmdGetData(struct cmd *cmd) {
 	sp = CreatePacket(sizeof(struct cmd));
 	sp->cmd = CMD_GET_DATA;
 	memcpy((char *)sp+PACKET_HDR_SIZE, cmd, sizeof(struct cmd));
-	
 	SendPacket(sp);				/* send request for data */
 	rp = RecvPacket();			/* receive data */
 
@@ -183,14 +220,14 @@ void CmdSetData(struct cmd *cmd) {
 
 
 void CmdGetState(struct cmd *cmd) {
-	printf("not implemented\n");
+	printf(": not implemented\n");
 
 	/* show state output */
 	ShowCommand(cmd);
 }
 
 
-/* Change the program counter at HC11. */
+/* Execute code at HC11. */
 void CmdExec(struct cmd *cmd) {
 	sp = CreatePacket(sizeof(struct cmd));
 	sp->cmd = CMD_EXEC;
@@ -232,13 +269,20 @@ int Init(void) {
 	signal(SIGKILL, SigDef);
 
 	/* initialize UI */
-	if (InitUI() == -1) goto UI_fail;
+	if (InitUI() == -1)
+		goto UI_fail;
 
 	/* setup communications */
-	if (InitComm() == -1) goto Comm_fail;
+	if (InitComm() == -1)
+		goto Comm_fail;
 
-	/* install monitor */
-	if (InstallMonitor() == -1)	goto Monitor_fail;
+	/* get options from rc-files or user and install monitor */
+	if (GetEnvOpt_RC(&env) == -1)
+		GetEnvOpt_UI(&env);
+	printf(": installing monitor, please wait ...\n");
+	if (InstallMonitor(&env) == -1)
+		goto Monitor_fail;
+	printf(": monitor installed\n");
 	
 	return 0;
 

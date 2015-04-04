@@ -2,8 +2,33 @@
 /*
  * ui_txt.c
  *
+ * This module handles the communication between the user and the PC. This is
+ * a text mode interface but it can be replaced with anything else. Only main.c
+ * should use this module.
+ *
+ * main.c uses InitUI(), CleanupUI(), GetCommand(), ShowCommand(),
+ * 			GetEnvOpt_UI().
+ *
  * TODO: make a general GetAddr() routine.
+ *
+ * public routines:
+ *		InitUI() initializes the user interface.
+ *		CleanupUI() closes down the user interface.
+ *		ConfigUI() reconfigures the user interface.
+ *		GetCommand() gets a command structure from the user.
+ *		ShowCommand() shows the result of an command.
+ *		GetEnvOpt_UI() gets HC11 setup options from user.
+ * private routines:
+ *		ShowState() shows the HC11 registers.
+ *		ShowCode() shows a disassembly listing.
+ *		ShowData() shows data.
+ *		Cls() clears the screen.
+ *		Help() shows help on commands.
+ *		SyntaxError() prints an error string.
+ *		GetHex() convers an ASCII hex byte into a real hex byte.
+ *
  */
+
 
 #include <stdio.h>
 #include <sys/types.h>
@@ -14,29 +39,10 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-#include "ui_txt.h"
 #include "monitor.h"
 #include "disasm.h"
 #include "command.h"
-
-
-/* exported functions, mainly used by main.c */
-int InitUI(void);
-int CleanupUI(void);
-int ConfigUI(void);
-int GetCommand(struct cmd *cmd);
-int ShowCommand(struct cmd *cmd);
-int GetEnvOptions(struct mcu_env *env);		/* xcept this one (for now) */
-/* command routines */
-int ShowState(struct cmd *scmd);
-int ShowCode(struct cmd *scmd);
-int ShowData(struct cmd *scmd);
-//void ShowDisasmMode(struct cmd *cmd);
-void Cls(struct cmd *scmd);
-void Help(struct cmd *scmd);
-void SyntaxError(struct cmd *scmd);
-/* internal routine */
-char GetHex(char c);
+#include "ui_txt.h"
 
 
 /* Initialize user interface. */
@@ -44,22 +50,21 @@ int InitUI(void) {
 	int i;
 
 	/* clear screen */
-	for (i=0; i<28; i++)
+	for (i=0; i<ROWS; i++)
 		printf("\n");
 
 	return 0;
 }
 
 
-/* not implemented */
 /* Closes down UI and prepares for exit() call. exit() is done outside of this
- * routine. */
+ * routine. Not much to do here in text mode though. */
 int CleanupUI(void) {
 	return 0;
 }
 
 
-/* not implemented */
+/* Nothing here either. Should be different with other UI modules. */
 int ConfigUI(void) {
 	return 0;
 }
@@ -67,6 +72,7 @@ int ConfigUI(void) {
 
 /* This routine gets a command structure which it fills in with the user's 
  * command and options. */
+/* TODO: This routine is to fat. It could be slimmed. */
 int GetCommand(struct cmd *cmd) {
 	char cmdbuf[81];
 	char *cmdptr;
@@ -250,7 +256,7 @@ int ShowCommand(struct cmd *scmd) {
 
 
 /* Get the MCU environment options from user and fill the env struct. */
-int GetEnvOptions(struct mcu_env *env) {
+int GetEnvOpt_UI(struct mcu_env *env) {
 	char c;
 	char buf[10];
 	
@@ -274,16 +280,16 @@ int GetEnvOptions(struct mcu_env *env) {
 		break;
 	} while (1);
 	
-	do {
-		printf("    talker page [0-F] [%01X]: ", env->talker_page);
-		fgets(buf, 3, stdin);
-		c = GetHex(buf[0]);
-		if (buf[0]=='\n') break;
-		else if (((c>=0 && c<=0xF) && (c<=9 || c>=0xA))	&& buf[1]==0xA) {
-			env->talker_page = c;
-			break;
-		}
-	} while (1);
+	//do {
+		printf("    talker page [0-F] [%01X]: DOESN'T WORK!\n", env->talker_page);
+	//	fgets(buf, 3, stdin);
+	//	c = GetHex(buf[0]);
+	//	if (buf[0]=='\n') break;
+	//	else if (((c>=0 && c<=0xF) && (c<=9 || c>=0xA))	&& buf[1]==0xA) {
+	//		env->talker_page = c;
+	//		break;
+	//	}
+	//} while (1);
 	
 	do {
 		printf("    RAM page [0-F] [%01X]: ", env->ram_page);
@@ -369,8 +375,8 @@ int GetEnvOptions(struct mcu_env *env) {
 		}
 	} while (1);
 
-	printf("    timer prescaler rate [1/4/8/16] []: \n");
-	printf("    COP prescaler rate [1/4/16/64] []: \n\n");
+	printf("    timer prescaler rate [1/4/8/16] []: NOT IMPLEMENTED\n");
+	printf("    COP prescaler rate [1/4/16/64] []: NOT IMPLEMENTED\n\n");
 	return 0;
 }
 

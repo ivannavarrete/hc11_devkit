@@ -3,26 +3,43 @@
 
 ; The X index register must always point at register base address. Do not
 ; change it.
-
-;=== equates ===================================================================
-; MCU registers
-PORTD		equ	$0008
-DDRD		equ	$0009
-BAUD		equ $002B
-SCCR1		equ	$002C
-SCCR2		equ	$002D
-SCSR		equ	$002E
-SCDR		equ	$002F
-CONFIG		equ	$003F
+; The monitor must start at offset 100 from a page, so we can have monitor and
+; registers (and RAM, when RAM is less than 256 bytes) at the same page.
 
 
+;*******************************************************************************
+;*** equates *******************************************************************
+;*******************************************************************************
+; MCU registers (offsets from a page)
+PORTD				equ	$0008
+DDRD				equ	$0009
+BAUD				equ $002B
+SCCR1				equ	$002C
+SCCR2				equ	$002D
+SCSR				equ	$002E
+SCDR				equ	$002F
+CONFIG				equ	$003F
+
+; packet variables (must match packet struct in monitor.h)
+packet_hdr_size:	equ	8
+_packet_id:			equ 0 
+_packet_cmd:		equ	3
+_packet_size:		equ	4
+_packet_csum:		equ	6
+
+; packet commands (must be same as in monitor.h)
+cmd_hw_ok:			equ	98
+cmd_hw_err:			equ	99
+
+
+;*******************************************************************************
+;*** monitor code **************************************************************
+;*******************************************************************************
 ; this is needed to properly parse the file
 	org $E000
 	zmb	$FF
 
 
-; The monitor must start at offset 100 from a page, so we can have monitor and
-; registers (and RAM, when RAM is less than 256 bytes) at the same page.
 	org $E100
 ;=== monitor initialization ====================================================
 init:
@@ -45,18 +62,18 @@ main:
 		ldy		0,Y
 		jsr		0,Y
 		; get next command
-		jmp		main				
+		jmp		main
 
-		; don't change the jump table order
-max_cmd			equ	6
+		; don't change the jump table order; it follows monitor.h
+max_cmd			equ	7
 jmp_table:
 		fdb		cmd_nop
 		fdb		cmd_get_data
 		fdb		cmd_set_data
-		fdb		cmd_block_fill
 		fdb		cmd_get_state
 		fdb		cmd_set_state
 		fdb		cmd_exec
+		fdb		cmd_set_code
 		fdb		cmd_err
 
 
@@ -73,14 +90,14 @@ recv_packet:
 		pshy
 		
 _recv0:	ldy		#m_packet
-_recv1:	brclr	SCSR,X #$20 *		; get packet header
+_recv1:	brclr	SCSR,X #$20 *			; get packet header
 		ldaa	SCDR,X
 		staa	0,Y
 		iny
 		cpy		#m_packet+#packet_hdr_size
 		bne		_recv1
 
-		ldd		m_packet+_packet_size		; get packet data
+		ldd		m_packet+_packet_size	; get packet data
 		beq		_csum
 		ldy		packet_data_ptr
 _recv2:	std		packet_size_tmp
@@ -92,7 +109,7 @@ _recv2:	std		packet_size_tmp
 		subd	#$0001
 		bne		_recv2
 
-_csum:	ldaa	#cmd_hw_ok			; determine if packet is ok
+_csum:	ldaa	#cmd_hw_ok				; determine if packet is ok
 		staa	c_packet+_packet_cmd
 		ldy		#m_packet
 		jsr		csum
@@ -115,14 +132,16 @@ _reply:	ldy		#c_packet
 
 ;=== send_packet ===============================================================
 ; input:
-;	Y		packet pointer
+;	Y					packet header pointer
+;	packet_data_ptr		packet data pointer
 ;===============================================================================
 send_packet:
 		psha
 		pshb
 		pshy
 
-		jsr		csum				; insert csum into packet
+		; insert csum into packet
+		jsr		csum
 		std		_packet_csum,Y
 
 		pshy
@@ -132,14 +151,16 @@ send_packet:
 		std		packet_hdr_e		; D points to packet header end
 		sty		packet_hdr_s		; Y points to packet header start
 
-_send0:	ldaa	0,Y					; send packet header
+		; send packet header
+_send0:	ldaa	0,Y
 		brclr	SCSR,X #$80 *
 		staa	SCDR,X
 		iny
 		cpy		packet_hdr_e
 		bne		_send0
 
-		ldy		packet_hdr_s		; send packet data
+		; send packet data
+		ldy		packet_hdr_s
 		ldd		_packet_size,Y
 		beq		_done				; if data size = 0, then send nothing more
 		ldy		packet_data_ptr		; command routines set up packet_data_ptr
@@ -173,13 +194,15 @@ _done:	puly
 csum:
 		pshx
 
-		ldx		_packet_csum,Y		; save and zero old csum
+		; save and zero old csum
+		ldx		_packet_csum,Y
 		pshx
 		ldd		#$0000
 		std		_packet_csum,Y
 
+		; Y=last byte-2, D=0
 		dey
-		sty		packet_hdr_s		; Y=last byte - 2, D=0
+		sty		packet_hdr_s
 		ldd		packet_hdr_s
 		addd	#packet_hdr_size-1
 		addd	_packet_size+1,Y
@@ -187,13 +210,15 @@ csum:
 		clra
 		clrb
 
-_csum0:	addd	0,Y					; calculate csum
+		; calculate csum
+_csum0:	addd	0,Y
 		dey
 		cpy		packet_hdr_s
 		bne		_csum0
 		iny
 		
-		pulx						; restore old csum
+		; restore old csum
+		pulx
 		stx		_packet_csum,Y
 
 		pulx
@@ -250,6 +275,7 @@ cmd_get_data:
 		stab	packet_data+4			; addr2
 		staa	packet_data+5
 
+		; create packet
 		ldd		packet_data+4			; calculate packet size
 		bne		_l10
 		ldd		#$20
@@ -259,6 +285,7 @@ _l20:	std		m_packet+_packet_size	; put size into main packet
 		ldd		packet_data+2
 		std		packet_data_ptr			; set up data pointer
 
+		; send packet
 		ldy		#m_packet
 		jsr		send_packet
 
@@ -282,39 +309,44 @@ cmd_set_data:
 		rts
 
 
-;=== cmd_block_fill ============================================================
-cmd_block_fill:
-		ldaa	#$03
-		jsr		debug_ac
-		rts
-
-
 ;=== cmd_get_state =============================================================
 cmd_get_state:
-		ldaa	#$04
+		; not implemented
+		ldaa	#$03
 		jsr		debug_ac
 		rts
 
 
 ;=== cmd_set_state =============================================================
 cmd_set_state:
-		ldaa	#$05
+		; not implemented
+		ldaa	#$04
 		jsr		debug_ac
 		rts
 
 
 ;=== cmd_exec ==================================================================
 cmd_exec:
-		ldaa	#$06
+		ldaa	#$05
 		jsr		debug_ac
 
-		ldd		packet_data+2
-		stab	packet_data+2
+		ldd		packet_data+2			; again ntohs() should be at PC
+		stab	packet_data+2			; get start addr
 		staa	packet_data+3
 		ldy		packet_data+2
 
-		jmp		0,Y
+		jmp		0,Y						; jump to code
 		
+		rts
+
+;=== cmd_set_code ==============================================================
+cmd_set_code:
+		; not implemented
+		; isn't even necessary since it's done by cmd_set_data and logic
+		; at PC side
+		ldaa	#$05
+		jsr		debug_ac
+
 		rts
 
 
@@ -362,6 +394,11 @@ debug_a:
 		rts
 
 
+;=== def_int ===================================================================
+def_int:
+		rti
+
+
 ;*******************************************************************************
 ;*** monitor data area *********************************************************
 ;*******************************************************************************
@@ -378,23 +415,11 @@ _mcu_SP:			rmb	2
 _mcu_PC:			rmb	2
 _mcu_flags:			rmb	1
 
-; packet variables
-packet_hdr_size:	equ	8
-_packet_id:			equ 0 
-_packet_cmd:		equ	3
-_packet_size:		equ	4
-_packet_csum:		equ	6
-
 m_packet:			fcb	'M,'C,'P, 0, 0,0, 0,0	; main packet
 c_packet:			fcb	'M,'C,'P, 0, 0,0, 0,0	; confirmation packet
 
 packet_data:		rmb	256			; packet data buffer
 packet_data_ptr:	rmb 2			; pointer to packet data
-
-; packet commands
-cmd_hw_ok:			equ	98
-cmd_hw_err:			equ	99
-
 
 ; temp variables
 packet_size_tmp:	rmb 2
@@ -411,37 +436,37 @@ mon_stack:
 ;*** interrupt vectors *********************************************************
 ;*******************************************************************************
 	org $FFC0
-res1:				fcb	$11,$11
-res2:				fcb	00,00
-res3:				fcb	00,00
-res4:				fcb	00,00
-res5:				fcb	00,00
-res6:				fcb	00,00
-res7:				fcb	00,00
-res8:				fcb 00,00
-res9:				fcb 00,00
-res10:				fcb 00,00
-res11:				fcb 00,00
-v_sci:				fcb	00,00
-v_spi_done:			fcb	00,00
-v_pa_inedge:		fcb	00,00
-v_pa_owrflow:		fcb	00,00
-v_t_ovrflow:		fcb	00,00
-v_tic4_tok5:		fcb	00,00
-v_tok4:				fcb	00,00
-v_tok3:				fcb	00,00
-v_tok2:				fcb	00,00
-v_tok1:				fcb	00,00
-v_tic3:				fcb	00,00
-v_tic2:				fcb	00,00
-v_tic1:				fcb	00,00
-v_rti:				fcb	00,00
-v_irq:				fcb	00,00
-v_xirq:				fcb	00,00
-v_softint:			fcb	00,00
-v_ill_opcode:		fcb	00,00
-v_cop_fail:			fcb	00,00
-v_clk_fail:			fcb	00,00
-v_reset:			fcb	$FF,$FF
+res1:				fdb	def_int
+res2:				fdb	def_int
+res3:				fdb	def_int
+res4:				fdb	def_int
+res5:				fdb	def_int
+res6:				fdb	def_int
+res7:				fdb	def_int
+res8:				fdb def_int
+res9:				fdb def_int
+res10:				fdb def_int
+res11:				fdb def_int
+v_sci:				fdb	def_int
+v_spi_done:			fdb	def_int
+v_pa_inedge:		fdb	def_int
+v_pa_owrflow:		fdb	def_int
+v_t_ovrflow:		fdb	def_int
+v_tic4_tok5:		fdb	def_int
+v_tok4:				fdb	def_int
+v_tok3:				fdb	def_int
+v_tok2:				fdb	def_int
+v_tok1:				fdb	def_int
+v_tic3:				fdb	def_int
+v_tic2:				fdb	def_int
+v_tic1:				fdb	def_int
+v_rti:				fdb	def_int
+v_irq:				fdb	def_int
+v_xirq:				fdb	def_int
+v_softint:			fdb	def_int
+v_ill_opcode:		fdb	def_int
+v_cop_fail:			fdb	def_int
+v_clk_fail:			fdb	def_int
+v_reset:			fdb	def_int
 
 end:

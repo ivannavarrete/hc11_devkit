@@ -1,5 +1,20 @@
 
-/* TODO: FIX THE TABLES!! IT'S HORRIBLE!! FIND A BETTER WAY TO DO THINGS!!! */
+/*
+ * disasm.c
+ *
+ * This module handles the creation and destruction of a disassembly list.
+ *
+ * main.c uses CreateDisasm() and DestroyDisasm().
+ *
+ * TODO: FIX THE TABLES!! IT'S HORRIBLE!! FIND A BETTER WAY TO DO THINGS!!!
+ *
+ * public routines:
+ *		CreateDisasm() creates a disassembly list based on the input buffer.
+ *		DestroyDisasm() destroys the previously created disasm list.
+ * private routines:
+ *		DisasmOp() disassembles the next one instruction from the input buffer.
+ *
+ */
 
 
 #include <stdio.h>
@@ -7,11 +22,6 @@
 #include <stdlib.h>
 
 #include "disasm.h"
-
-
-struct dis_instr *CreateDisasm(unsigned short addr, unsigned char *code, int len);
-int DestroyDisasm(struct dis_instr *da_list);
-int DisasmOp(unsigned short addr, unsigned char *data, int len, struct dis_instr *instr);
 
 
 struct opcode ops[] = {

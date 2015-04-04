@@ -39,5 +39,13 @@ struct packet {
 #define CMD_HW_ERR			99
 
 
+int InstallMonitor(struct mcu_env *env);
+int ConfigEnvOptions(struct mcu_env *env, char *buf);
+struct packet *CreatePacket(int data_size);
+int DestroyPacket(struct packet *p);
+int SendPacket(struct packet *p);
+struct packet *RecvPacket(void);
+int Csum(struct packet *p);
+
 
 #endif MONITOR_H

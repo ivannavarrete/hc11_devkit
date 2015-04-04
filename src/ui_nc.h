@@ -1,6 +1,6 @@
 
-#ifndef UI_TXT_H
-#define UI_TXT_H
+#ifndef UI_NC_H
+#define UI_NC_H
 
 
 #include "command.h"
@@ -32,15 +32,15 @@ int GetCommand(struct cmd *cmd);
 int ShowCommand(struct cmd *cmd);
 int GetEnvOpt_UI(struct mcu_env *env);
 /* command routines */
-int ShowState(struct cmd *scmd);
-int ShowCode(struct cmd *scmd);
-int ShowData(struct cmd *scmd);
+//int ShowState(struct cmd *scmd);
+//int ShowCode(struct cmd *scmd);
+//int ShowData(struct cmd *scmd);
 //void ShowDisasmMode(struct cmd *cmd);
-void Cls(struct cmd *scmd);
-void Help(struct cmd *scmd);
-void SyntaxError(struct cmd *scmd);
+//void Cls(struct cmd *scmd);
+//void Help(struct cmd *scmd);
+//void SyntaxError(struct cmd *scmd);
 /* internal routine */
-char GetHex(char c);
+//char GetHex(char c);
 
 
-#endif UI_TXT_H
+#endif UI_NC_H

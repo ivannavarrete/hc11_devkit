@@ -22,14 +22,14 @@ struct cmd {
 #define CMD_NOP				0
 #define CMD_GET_DATA		1	/* get data from HC11 */
 #define CMD_SET_DATA		2	/* upload data to HC11 */
-#define CMD_GET_STATE		4
-#define CMD_SET_STATE		5
-#define CMD_EXEC			6
+#define CMD_GET_STATE		3
+#define CMD_SET_STATE		4
+#define CMD_EXEC			5
+#define CMD_SET_CODE		6	/* assemble a file and upload to HC11 */
 #define CMD_SYNTAX_ERR		7	/* syntax error */
 
 #define CMD_CLS				203	/* clear command screen */
 #define CMD_GET_CODE		204	/* disassemble code */
-#define CMD_SET_CODE		205	/* assemble a file and upload to HC11 */
 
 #define CMD_QUIT			99	/* quit program */
 

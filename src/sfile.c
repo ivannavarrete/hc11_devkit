@@ -1,4 +1,21 @@
 
+/*
+ * sfile.c
+ *
+ * This module handles conversion of an s-file into several different formats.
+ *
+ * main.c uses CreateSFile(), DestroySFile().
+ * monitor.c uses CreateSFile(), DestroySFile().
+ *
+ * public routines:
+ *		CreateSFile() create an s-file struct describing the s-file.
+ *		DestroySFile() destroy a previously created s-file struct.
+ * private routines:
+ *		GetByte() convert an ASCII hex number to a normal hex number.
+ *
+ */
+ 
+
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -10,50 +27,12 @@
 #include "sfile.h"
 
 
-int SendSFile(char *file, int options);
-int ParseSFile(char *file, char *buf, int options);
-unsigned char GetByte(char *str);
-
-/* serial.c */
-extern int SendData(char *buf, int len);
-
-
-/* Send an S record file to the device fd. If len_on is set then the length of
- * a line is sent before the address and data. If addr_on is set then the
- * memory load address of every record is sent before the data. 
- *
+/* Create an sfile structure describing the parsed s-file. The data buffer in
+ * the structure can have the following format:
  *		[line length] [memory addr] <data>
- */
-int SendSFile(char *file, int options) {
-	unsigned char *buf;
-	int fd, len;
-	
-	/* get file length */
-	fd = open(file, O_RDONLY);
-	if (fd == -1)
-		return -1;
-	len = lseek(fd, 0, SEEK_END);
-	close(fd);
-	
-	/* parse file */
-	buf = malloc(len);
-	if (buf == NULL)
-		return -1;
-	len = ParseSFile(file, buf, SFILE_COMPRESSED);
-	if (len == -1) {
-		free(buf);
-		return -1;
-	}
-
-	/* send file */
-	SendData(buf, len);
-
-	free(buf);
-	return 0;
-}
-
-
-int ParseSFile(char *file, char *buf, int options) {
+ * It all depends on the options variable (check sfile.h for options) */
+/* NOTE: This routine probably contains bugs. SEARCH AND DESTROY! */
+struct sfile *CreateSFile(char *file, int options) {
 	unsigned int filelen, buflen, memaddr1, memaddr2, holelen;
 	int fd;
 	int holeh;		/* help variable for calculating memory holes */
@@ -61,10 +40,25 @@ int ParseSFile(char *file, char *buf, int options) {
 	unsigned char linelen, csum;
 	unsigned char addr[2];
 	int i, j;
+	struct sfile *sf;
+	char *tmp_ptr;
+
+	/* create sfile structure */
+	sf = malloc(sizeof(struct sfile));
+	if (sf == NULL)
+		return NULL;
+	sf->data = NULL;
+	sf->dsize = 0;
+	sf->options = options;
 
 	/* mmap the file */
 	fd = open(file, O_RDONLY);
-	if (fd == -1) return -1;
+	if (fd == -1) {
+		printf(": ");
+		fflush(stdout);
+		perror("");
+		goto fail;
+	}
 	filelen = lseek(fd, 0, SEEK_END);
 	sfile = mmap(0, filelen, PROT_READ, MAP_PRIVATE, fd, 0);
 	
@@ -81,16 +75,26 @@ int ParseSFile(char *file, char *buf, int options) {
 		} else if (sfile[i] == 'S' && sfile[i+1] == '1') {	/* data record */
 			/* parse line length */
 			if (options & SFILE_LEN_ON) {
-				buf[buflen] = GetByte(sfile+i+2);	/* data+addr length */
-				if (!(options & SFILE_ADDR_ON))		/* only data length */
-					buf[buflen] -= 2;
+				tmp_ptr = realloc(sf->data, buflen+1);	/* expand buffer */
+				if (!tmp_ptr)
+					goto fail_mem;
+				sf->data = tmp_ptr;
+				
+				sf->data[buflen] = GetByte(sfile+i+2);	/* data+addr len */
+				if (!(options & SFILE_ADDR_ON))			/* only data length */
+					sf->data[buflen] -= 2;
 				buflen++;
 			}
 
 			/* parse memory load address */
 			if (options & SFILE_ADDR_ON) {
-				buf[buflen] = GetByte(sfile+i+4);
-				buf[buflen+1] = GetByte(sfile+i+6);
+				tmp_ptr = realloc(sf->data, buflen+2);	/* expand buffer */
+				if (!tmp_ptr)
+					goto fail_mem;
+				sf->data = tmp_ptr;
+				
+				sf->data[buflen] = GetByte(sfile+i+4);
+				sf->data[buflen+1] = GetByte(sfile+i+6);
  				
 				buflen += 2;
 			}
@@ -107,36 +111,63 @@ int ParseSFile(char *file, char *buf, int options) {
 					if (memaddr1 > memaddr2)
 						break;
 					holelen = memaddr2 - memaddr1;
+
+					tmp_ptr = realloc(sf->data, buflen+holelen);/* expand buf */
+					if (!tmp_ptr)
+						goto fail_mem;
+					sf->data = tmp_ptr;
+					
 					for (j=0; j<holelen; j++, buflen++)
-						buf[buflen] = 0;
+						sf->data[buflen] = 0;
 
 					memaddr1 = memaddr2 + linelen-3;
 				}
 			}
 
 			/* parse data */
+			tmp_ptr = realloc(sf->data, buflen+linelen-3);		/* expand buf */
+			if (!tmp_ptr)
+				goto fail_mem;
+			sf->data = tmp_ptr;
 			for (j=0; j<linelen-3; j++, buflen++)
-				buf[buflen] = GetByte(sfile+i+8+j*2);
+				sf->data[buflen] = GetByte(sfile+i+8+j*2);
 
 		} else if (sfile[i] == 'S' && sfile[i+1] == '9') {	/* term. record */
 			/* ... */
 		} else {
-			printf("S-file format error\n");
-			return -1;
+			printf(": S-file format error\n");
+			goto fail;
 		}
 			
 		i += (linelen+2)*2+1;
 	}
 	
-	return buflen;
+	sf->dsize = buflen;
+	return sf;
+
+  fail_mem:
+	perror(": CreateSFile(): ");
+  fail:
+  	DestroySFile(sf);
+	return NULL;
 }
 
 
+/* Just a free() wrapper. */
+void DestroySFile(struct sfile *sf) {
+	if (sf) {			/* so we can call the routine with a NULL var */
+		free(sf->data);
+		free(sf);
+	}
+}
+
+
+/* Can you see the segfault? Fixit later. */
 unsigned char GetByte(char *str) {
 	unsigned char c1, c2;
 
-	c1 = str[0];
-	c2 = str[1];
+	c1 = str[0];			/* HERE: what if str == NULL */
+	c2 = str[1];			/* AND HERE: what if str is only one byte */
 	if (c1 > '9') c1 -= 7;
 	if (c2 > '9') c2 -= 7;
 	c1 -= 0x30;

@@ -1,12 +1,12 @@
 
 CC = gcc
-CFLAGS = -O2 -Wall -g
+CFLAGS = -g -Wall
 MAKE = make
 
-OBJFILES = serial.o sfile.o monitor.o disasm.o ui_txt.o main.o
+OBJFILES = serial.o sfile.o monitor.o disasm.o ui_nc.o main.o rc.o
 
 all: $(OBJFILES)
-	gcc $(CFLAGS) $(OBJFILES) -o devsys
+	gcc -lncurses $(CFLAGS) $(OBJFILES) -o devsys
 	@cd ./hc11; $(MAKE) all;
 
 

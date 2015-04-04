@@ -1,0 +1,12 @@
+# environment options for HC11
+
+mode	e			# hc11 mode [e]xpanded/[s]ingle-chip/[b]ootstrap/[t]est
+talker	15			# talker page [0-15]
+ram		0			# RAM page [0-15]
+reg		0			# registers page [0-15]
+eeprom	on			# on-chip EEPROM [on/off]
+rom		off			# on chip ROM [on/off]
+irq		edge		# irq mode [edge/level]
+osc		on			# osc delay [on/off]
+tmr		16			# timer prescaler rate [1/4/8/16]
+cop		64			# COP prescaler rate [1/4/16/64]

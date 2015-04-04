@@ -46,4 +46,9 @@ struct dis_instr {
 #define OMODE_16_1		0x0101	/* 1 16-bit operand */
 
 
+struct dis_instr *CreateDisasm(unsigned short addr, unsigned char *code, int len);
+int DestroyDisasm(struct dis_instr *da_list);
+int DisasmOp(unsigned short addr, unsigned char *data, int len, struct dis_instr *instr);
+
+
 #endif DISASM_H

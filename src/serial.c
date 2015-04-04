@@ -1,5 +1,7 @@
 
 /*
+ * serial.c
+ *
  * This module handles the physical communication. It can be replaced if the
  * communication interface between PC and HC11 changes. Only the monitor.c
  * and main.c modules should use the functions in this module.
@@ -10,7 +12,7 @@
  * TODO: ConfigComm doesn't work properly. I currently start up minicom so it
  * configures the serial port and then exit without reset. Check the minicom
  * source..
- * Note: baud rate selection in ConfigComm seem to work, so ther's probably
+ * Note: baud rate selection in ConfigComm seem to work, so there's probably
  * a problem in the data format.
  *
  * public routines:
@@ -22,7 +24,6 @@
  * private routines:
  * 		SaveComm() saves the current configuration of the interface.
  *		RestoreComm() restores the previous configuration of the interface.
- *
  */
 
 
@@ -37,18 +38,6 @@
 #include "serial.h"
 
 
-int InitComm(void);
-int CleanupComm(void);
-int SaveComm(void);
-int RestoreComm(void);
-int ConfigComm(int baud);
-int SendData(const unsigned char *buf, int length);
-int RecvData(unsigned char *buf, int length);
-int FlushDev(void);
-
-int DebugGetSpeed(speed_t speed);		/* debug routine */
-
-
 struct termios org_mode;
 int dev;								/* interface handler */
 const char *iface = "/dev/ttyS1";		/* default interface */
@@ -58,13 +47,16 @@ int baud = 1200;						/* default initial interface speed */
 int InitComm(void) {
 	dev = open(iface, O_RDWR | O_SYNC);
 	if (dev == -1)
-		return -1;
+		goto fail;
 	if (SaveComm())
-		return -1;
+		goto fail;
 	if (ConfigComm(baud))
-		return -1;
+		goto fail;
 
 	return dev;
+  fail:
+	perror("InitComm()");
+	return -1;
 }
 
 
@@ -108,12 +100,25 @@ int ConfigComm(int baud) {
 	}
 
 	/* change input and output baud rate */
-	if (tcgetattr(dev, &ser)) return -1;
-	if (cfsetospeed(&ser, speed)) return -1;
-	if (cfsetispeed(&ser, speed)) return -1;
-	if (tcsetattr(dev, TCSADRAIN, &ser)) return -1;
+	if (tcgetattr(dev, &ser))
+		goto fail;
+	if (cfsetospeed(&ser, speed))
+		goto fail;
+	if (cfsetispeed(&ser, speed))
+		goto fail;
+	if (tcsetattr(dev, TCSADRAIN, &ser))
+		goto fail;
+	
+	/* 1 start bit, 8 data bits, 1 stop bit, no parity */
+	/* TODO: Fix this ugly cfmakeraw() hack ASAP!! */
+	cfmakeraw(&ser);
+	if (tcsetattr(dev, TCSADRAIN, &ser))
+		goto fail;
 
 	return 0;
+  fail:
+	perror("ConfigComm()");
+	return -1;
 }
 
 
@@ -150,6 +155,7 @@ int RecvData(unsigned char *buf, int length) {
 
 
 /* Find a better way to flush the device */
+/* maybe tcflush() ? */
 int FlushDev(void) {
 	int res;
 	char c;
