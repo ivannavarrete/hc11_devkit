@@ -116,6 +116,8 @@ t_recv:	brclr	SCSR,X #$20 *
 
 		; pass control to the talker
 		; we must also set Y to point to the right memory page
+		jmp		debug
+
 		jmp		#talker_s
 
 

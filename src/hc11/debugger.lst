@@ -1,0 +1,514 @@
+0001                         
+0002                         ;	opt l,c
+0003                         
+0004                         ; The X index register must always point at register base address. Do not
+0005                         ; change it.
+0006                         ; The monitor must start at offset 100 from a page, so we can have monitor and
+0007                         ; registers (and RAM, when RAM is less than 256 bytes) at the same page.
+0008                         
+0009                         
+0010                         ;*******************************************************************************
+0011                         ;*** equates *******************************************************************
+0012                         ;*******************************************************************************
+0013                         ; MCU registers (offsets from a page)
+0014 0008                    PORTD				equ	$0008
+0015 0009                    DDRD				equ	$0009
+0016 002b                    BAUD				equ $002B
+0017 002c                    SCCR1				equ	$002C
+0018 002d                    SCCR2				equ	$002D
+0019 002e                    SCSR				equ	$002E
+0020 002f                    SCDR				equ	$002F
+0021 003f                    CONFIG				equ	$003F
+0022                         
+0023                         ; packet variables (must match packet struct in monitor.h)
+0024 0008                    packet_hdr_size:	equ	8
+0025 0000                    _packet_id:			equ 0 
+0026 0003                    _packet_cmd:		equ	3
+0027 0004                    _packet_size:		equ	4
+0028 0006                    _packet_csum:		equ	6
+0029                         
+0030                         ; packet commands (must be same as in monitor.h)
+0031 0062                    cmd_hw_ok:			equ	98
+0032 0063                    cmd_hw_err:			equ	99
+0033                         ; command modifiers (must be sabe as in command.h)
+0034 0003                    cmd_bp_set:			equ	3
+0035 0004                    cmd_bp_clear:		equ	4
+0036                         
+0037                         
+0038                         ;*******************************************************************************
+0039                         ;*** monitor code **************************************************************
+0040                         ;*******************************************************************************
+0041                         ; this is needed to properly parse the file
+0042 e000                    	org $E000
+0043 e000 00 00 00 00 00 00  	zmb	$FF
+     00 00 00 00 00 00
+     00 00 00 00 00 00
+     00 00 00 00 00 00
+     00 00 00 00 00 00
+     00 00 00 00 00 00
+     00 00 00 00 00 00
+     00 00 00 00 00 00
+     00 00 00 00 00 00
+     00 00 00 00 00 00
+     00 00 00 00
+0044                         
+0045                         
+0046 e100                    	org $E100
+0047                         ;=== monitor initialization ====================================================
+0048                         init:
+0049 e100 ff e2 d3           		stx		regbase
+0050 e103 8e ff be           		lds		#mon_stack
+0051 e106 bd e2 18           		jsr		sci_init
+0052                         
+0053                         ;=== main routine ==============================================================
+0054                         main:
+0055                         		; get command from PC
+0056 e109 cc e2 f2           		ldd		#packet_data
+0057 e10c fd e3 f2           		std		packet_data_ptr
+0058 e10f bd e1 37           		jsr		recv_packet
+0059                         
+0060                         		; jump to command routine
+0061 e112 18 ce e1 25        		ldy		#jmp_table
+0062 e116 f6 e2 e5           		ldab	m_packet+_packet_cmd
+0063 e119 58                 		lslb
+0064 e11a 18 3a              		aby
+0065 e11c 18 ee 00           		ldy		0,Y
+0066 e11f 18 ad 00           		jsr		0,Y
+0067                         		; get next command
+0068 e122 7e e1 09           		jmp		main
+0069                         
+0070                         		; don't change the jump table order; it follows command.h
+0071 0007                    max_cmd			equ	7
+0072                         jmp_table:
+0073 e125 e2 33              		fdb		cmd_nop
+0074 e127 e2 36              		fdb		cmd_get_data
+0075 e129 e2 68              		fdb		cmd_set_data
+0076 e12b e2 7d              		fdb		cmd_get_state
+0077 e12d e2 80              		fdb		cmd_set_state
+0078 e12f e2 83              		fdb		cmd_exec
+0079 e131 e2 96              		fdb		cmd_bp
+0080 e133 e2 a0              		fdb		cmd_set_code
+0081 e135 e2 a3              		fdb		cmd_err
+0082                         
+0083                         
+0084                         ;=== recv_packet ===============================================================
+0085                         ; input:
+0086                         ;	packet_data_ptr		points to where to store packet data
+0087                         ; output:
+0088                         ;	m_packet			received packet header
+0089                         ;	packet_data_ptr		packet data stored at pointer location
+0090                         ;===============================================================================
+0091                         recv_packet:
+0092 e137 36                 		psha
+0093 e138 37                 		pshb
+0094 e139 18 3c              		pshy
+0095                         		
+0096 e13b 18 ce e2 e2        _recv0:	ldy		#m_packet
+0097 e13f 1f 2e 20 fc        _recv1:	brclr	SCSR,X #$20 *			; get packet header
+0098 e143 a6 2f              		ldaa	SCDR,X
+0099 e145 18 a7 00           		staa	0,Y
+0100 e148 18 08              		iny
+0101 e14a 18 8c e2 ea        		cpy		#m_packet+#packet_hdr_size
+0102 e14e 26 ef              		bne		_recv1
+0103                         
+0104 e150 fc e2 e6           		ldd		m_packet+_packet_size	; get packet data
+0105 e153 27 1a              		beq		_csum
+0106 e155 18 fe e3 f2        		ldy		packet_data_ptr
+0107 e159 fd e3 f4           _recv2:	std		packet_size_tmp
+0108 e15c 1f 2e 20 fc        		brclr	SCSR,X #$20 *
+0109 e160 a6 2f              		ldaa	SCDR,X
+0110 e162 18 a7 00           		staa	0,Y
+0111 e165 18 08              		iny
+0112 e167 fc e3 f4           		ldd		packet_size_tmp
+0113 e16a 83 00 01           		subd	#$0001
+0114 e16d 26 ea              		bne		_recv2
+0115                         
+0116 e16f 86 62              _csum:	ldaa	#cmd_hw_ok				; determine if packet is ok
+0117 e171 b7 e2 ed           		staa	c_packet+_packet_cmd
+0118 e174 18 ce e2 e2        		ldy		#m_packet
+0119 e178 bd e1 e7           		jsr		csum
+0120 e17b 1a b3 e2 e8        		cpd		m_packet+_packet_csum
+0121 e17f 27 05              		beq		_reply
+0122 e181 86 63              		ldaa	#cmd_hw_err
+0123 e183 b7 e2 ed           		staa	c_packet+_packet_cmd
+0124                         
+0125 e186 18 ce e2 ea        _reply:	ldy		#c_packet
+0126 e18a bd e1 96           		jsr		send_packet			; send a response to PC based on csum
+0127                         
+0128 e18d 91 63              		cmpa	cmd_hw_err			; if error, try again
+0129 e18f 27 aa              		beq		_recv0
+0130                         
+0131 e191 18 38              		puly
+0132 e193 33                 		pulb
+0133 e194 32                 		pula
+0134 e195 39                 		rts
+0135                         
+0136                         
+0137                         ;=== send_packet ===============================================================
+0138                         ; input:
+0139                         ;	Y					packet header pointer
+0140                         ;	packet_data_ptr		packet data pointer
+0141                         ;===============================================================================
+0142                         send_packet:
+0143 e196 36                 		psha
+0144 e197 37                 		pshb
+0145 e198 18 3c              		pshy
+0146                         
+0147                         		; insert csum into packet
+0148 e19a bd e1 e7           		jsr		csum
+0149 e19d 18 ed 06           		std		_packet_csum,Y
+0150                         
+0151 e1a0 18 3c              		pshy
+0152 e1a2 32                 		pula
+0153 e1a3 33                 		pulb
+0154 e1a4 c3 00 08           		addd	#packet_hdr_size
+0155 e1a7 fd e3 fa           		std		packet_hdr_e		; D points to packet header end
+0156 e1aa 18 ff e3 f8        		sty		packet_hdr_s		; Y points to packet header start
+0157                         
+0158                         		; send packet header
+0159 e1ae 18 a6 00           _send0:	ldaa	0,Y
+0160 e1b1 1f 2e 80 fc        		brclr	SCSR,X #$80 *
+0161 e1b5 a7 2f              		staa	SCDR,X
+0162 e1b7 18 08              		iny
+0163 e1b9 18 bc e3 fa        		cpy		packet_hdr_e
+0164 e1bd 26 ef              		bne		_send0
+0165                         
+0166                         		; send packet data
+0167 e1bf 18 fe e3 f8        		ldy		packet_hdr_s
+0168 e1c3 18 ec 04           		ldd		_packet_size,Y
+0169 e1c6 27 1a              		beq		_done				; if data size = 0, then send nothing more
+0170 e1c8 18 fe e3 f2        		ldy		packet_data_ptr		; command routines set up packet_data_ptr
+0171 e1cc fd e3 f4           _send1:	std		packet_size_tmp
+0172 e1cf 18 a6 00           		ldaa	0,Y
+0173 e1d2 1f 2e 80 fc        		brclr	SCSR,X #$80 *
+0174 e1d6 a7 2f              		staa	SCDR,X				; send one byte
+0175 e1d8 18 08              		iny
+0176 e1da fc e3 f4           		ldd		packet_size_tmp
+0177 e1dd 83 00 01           		subd	#$0001
+0178 e1e0 26 ea              		bne		_send1
+0179                         
+0180 e1e2 18 38              _done:	puly
+0181 e1e4 33                 		pulb
+0182 e1e5 32                 		pula
+0183 e1e6 39                 		rts
+0184                         
+0185                         
+0186                         ;=== csum ======================================================================
+0187                         ; Calculate checksum on packet in packet buffer. Old csum is counted as zero.
+0188                         ;
+0189                         ;	short csum = 0;
+0190                         ;	for (i=packet_hdr+packet_hdr_size+*(packet_size)-2; i>=packet_hdr; i--)
+0191                         ;		csum += packet_hdr[i];
+0192                         ;
+0193                         ; input:
+0194                         ;	Y		packet pointer
+0195                         ; output:
+0196                         ;	D		packet checksum
+0197                         ;===============================================================================
+0198                         csum:
+0199 e1e7 3c                 		pshx
+0200                         
+0201                         		; save and zero old csum
+0202 e1e8 cd ee 06           		ldx		_packet_csum,Y
+0203 e1eb 3c                 		pshx
+0204 e1ec cc 00 00           		ldd		#$0000
+0205 e1ef 18 ed 06           		std		_packet_csum,Y
+0206                         
+0207                         		; Y=last byte-2, D=0
+0208 e1f2 18 09              		dey
+0209 e1f4 18 ff e3 f8        		sty		packet_hdr_s
+0210 e1f8 fc e3 f8           		ldd		packet_hdr_s
+0211 e1fb c3 00 07           		addd	#packet_hdr_size-1
+0212 e1fe 18 e3 05           		addd	_packet_size+1,Y
+0213 e201 18 8f              		xgdy
+0214 e203 4f                 		clra
+0215 e204 5f                 		clrb
+0216                         
+0217                         		; calculate csum
+0218 e205 18 e3 00           _csum0:	addd	0,Y
+0219 e208 18 09              		dey
+0220 e20a 18 bc e3 f8        		cpy		packet_hdr_s
+0221 e20e 26 f5              		bne		_csum0
+0222 e210 18 08              		iny
+0223                         		
+0224                         		; restore old csum
+0225 e212 38                 		pulx
+0226 e213 cd ef 06           		stx		_packet_csum,Y
+0227                         
+0228 e216 38                 		pulx
+0229 e217 39                 		rts
+0230                         
+0231                         
+0232                         ;=== sci_init ==================================================================
+0233                         sci_init:
+0234 e218 36                 		psha
+0235                         
+0236 e219 6f 2d              		clr		SCCR2,X				; disable everything
+0237 e21b 86 30              		ldaa	#$30				; 9600bps
+0238 e21d a7 2b              		staa	BAUD,X
+0239 e21f 6f 2c              		clr		SCCR1,X				; 1 start, 8 data, 1 stop,
+0240 e221 1c 2d 0c           		bset	SCCR2,X #$0C		; enable receiver and transmitter
+0241                         
+0242 e224 a6 2e              		ldaa	SCSR,X				; clear status
+0243 e226 a6 2f              		ldaa	SCDR,X
+0244                         		
+0245 e228 32                 		pula
+0246 e229 39                 		rts
+0247                         
+0248                         
+0249                         ;=== dly =======================================================================
+0250 e22a 3c                 dly:	pshx
+0251 e22b ce ff ff           		ldx		#$FFFF
+0252 e22e 09                 _dly0:	dex
+0253 e22f 26 fd              		bne		_dly0
+0254 e231 38                 		pulx
+0255 e232 39                 		rts
+0256                         	
+0257                         
+0258                         ;*******************************************************************************
+0259                         ;*** command routines **********************************************************
+0260                         ;*******************************************************************************
+0261                         ;=== cmd_nop ===================================================================
+0262                         cmd_nop:
+0263 e233 86 ff              		ldaa	#$FF
+0264                         		;jsr		debug_ac
+0265 e235 39                 		rts
+0266                         
+0267                         
+0268                         ;=== cmd_get_data ==============================================================
+0269                         cmd_get_data:
+0270 e236 86 01              		ldaa	#$01
+0271                         		;jsr		debug_ac
+0272                         
+0273                         		; parse packet data
+0274 e238 fc e2 f4           		ldd		packet_data+2			; ntohs() should be done at PC side
+0275 e23b f7 e2 f4           		stab	packet_data+2			; addr1
+0276 e23e b7 e2 f5           		staa	packet_data+3
+0277                         		
+0278 e241 fc e2 f6           		ldd		packet_data+4
+0279 e244 f7 e2 f6           		stab	packet_data+4			; addr2
+0280 e247 b7 e2 f7           		staa	packet_data+5
+0281                         
+0282                         		; create packet
+0283 e24a fc e2 f6           		ldd		packet_data+4			; calculate packet size
+0284 e24d 26 05              		bne		_l10
+0285 e24f cc 00 20           		ldd		#$20
+0286 e252 20 03              		bra		_l20
+0287 e254 b3 e2 f4           _l10:	subd	packet_data+2
+0288 e257 fd e2 e6           _l20:	std		m_packet+_packet_size	; put size into main packet
+0289 e25a fc e2 f4           		ldd		packet_data+2
+0290 e25d fd e3 f2           		std		packet_data_ptr			; set up data pointer
+0291                         
+0292                         		; send packet
+0293 e260 18 ce e2 e2        		ldy		#m_packet
+0294 e264 bd e1 96           		jsr		send_packet
+0295                         
+0296 e267 39                 		rts
+0297                         
+0298                         
+0299                         ;=== cmd_set_data ==============================================================
+0300                         cmd_set_data:
+0301 e268 86 02              		ldaa	#$02
+0302                         		;jsr		debug_ac
+0303                         
+0304 e26a fc e2 f4           		ldd		packet_data+2			; ntohs() should be done at PC side
+0305 e26d f7 e2 f4           		stab	packet_data+2			; addr1
+0306 e270 b7 e2 f5           		staa	packet_data+3
+0307                         
+0308 e273 fc e2 f4           		ldd		packet_data+2
+0309 e276 fd e3 f2           		std		packet_data_ptr
+0310                         
+0311 e279 bd e1 37           		jsr		recv_packet
+0312                         		
+0313 e27c 39                 		rts
+0314                         
+0315                         
+0316                         ;=== cmd_get_state =============================================================
+0317                         cmd_get_state:
+0318                         		; not implemented
+0319 e27d 86 03              		ldaa	#$03
+0320                         		;jsr		debug_ac
+0321 e27f 39                 		rts
+0322                         
+0323                         
+0324                         ;=== cmd_set_state =============================================================
+0325                         cmd_set_state:
+0326                         		; not implemented
+0327 e280 86 04              		ldaa	#$04
+0328                         		;jsr		debug_ac
+0329 e282 39                 		rts
+0330                         
+0331                         
+0332                         ;=== cmd_exec ==================================================================
+0333                         cmd_exec:
+0334 e283 86 05              		ldaa	#$05
+0335                         		;jsr		debug_ac
+0336                         
+0337 e285 fc e2 f4           		ldd		packet_data+2			; again ntohs() should be at PC
+0338 e288 f7 e2 f4           		stab	packet_data+2			; get start addr
+0339 e28b b7 e2 f5           		staa	packet_data+3
+0340 e28e 18 fe e2 f4        		ldy		packet_data+2
+0341                         
+0342 e292 18 6e 00           		jmp		0,Y						; jump to code
+0343                         		
+0344 e295 39                 		rts
+0345                         
+0346                         
+0347                         ;=== cmd_bp ====================================================================
+0348                         cmd_bp:
+0349 e296 86 06              		ldaa	#$06
+0350                         		;jsr		debug_ac
+0351                         
+0352 e298 b6 e2 f3           		ldaa	packet_data+1			; get subcommand (set/clear)
+0353 e29b 91 03              		cmpa	cmd_bp_set
+0354 e29d 27 00              		beq		_bp_set
+0355                         
+0356                         										; clear breakpoint
+0357                         
+0358                         _bp_set:								; set breakpoint
+0359                         
+0360 e29f 39                 		rts
+0361                         
+0362                         
+0363                         ;=== cmd_set_code ==============================================================
+0364                         cmd_set_code:
+0365                         		; not implemented
+0366                         		; isn't even necessary since it's done by cmd_set_data and logic
+0367                         		; at PC side
+0368 e2a0 86 07              		ldaa	#$07
+0369                         		;jsr		debug_ac
+0370                         
+0371 e2a2 39                 		rts
+0372                         
+0373                         
+0374                         ;=== cmd_err ===================================================================
+0375                         cmd_err:
+0376 e2a3 86 fe              		ldaa	#$FE
+0377                         		;jsr		debug_ac
+0378 e2a5 39                 		rts
+0379                         
+0380                         
+0381                         ;*******************************************************************************
+0382                         ;*** breakpoint code ***********************************************************
+0383                         ;*******************************************************************************
+0384                         breakpoint:
+0385 e2a6 7e e1 00           		jmp		init
+0386                         
+0387                         
+0388                         ;*******************************************************************************
+0389                         ;*** debug routines ************************************************************
+0390                         ;*******************************************************************************
+0391                         ; Output one to bit 7 on PORTA and hang.
+0392 0000                    PORTA		equ	$0000
+0393 0026                    PACTL		equ	$0026
+0394 0028                    SPCR		equ	$0028
+0395                         debug_t:
+0396 e2a9 1c 26 80           		bset	PACTL,X #$80
+0397 e2ac 1c 00 80           		bset	PORTA,X #$80
+0398 e2af 20 fe              		bra		*
+0399                         ; Output one to bit 6 on PORTA and hang.
+0400                         debug_f:
+0401 e2b1 1c 00 40           		bset	PORTA,X #$40
+0402 e2b4 20 fe              		bra		*
+0403                         ; Output AccA onto PORTA[7:3] and PORTD[5:3] and hang.
+0404                         debug_ah:
+0405 e2b6 bd e2 bf           		jsr		debug_a
+0406 e2b9 20 fe              		bra		*
+0407                         ; Output AccA onto PORTA[7:3] and PORTD[5:3] and return.
+0408                         debug_ac:
+0409 e2bb bd e2 bf           		jsr		debug_a
+0410 e2be 39                 		rts
+0411                         ; Output AccA onto PORTA[7:3] and PORTD[5:3].
+0412                         debug_a:
+0413 e2bf 1c 26 80           		bset	PACTL,X #$80
+0414 e2c2 a7 00              		staa	PORTA,X
+0415 e2c4 1d 28 60           		bclr	SPCR,X #$60
+0416 e2c7 1c 09 3c           		bset	DDRD,X #$3C
+0417 e2ca 48                 		lsla
+0418 e2cb 48                 		lsla
+0419 e2cc 48                 		lsla
+0420 e2cd 84 38              		anda	#$38
+0421 e2cf a7 08              		staa	PORTD,X
+0422 e2d1 39                 		rts
+0423                         
+0424                         
+0425                         ;=== def_int ===================================================================
+0426                         def_int:
+0427 e2d2 3b                 		rti
+0428                         
+0429                         
+0430                         ;*******************************************************************************
+0431                         ;*** monitor data area *********************************************************
+0432                         ;*******************************************************************************
+0433 e2d3                    regbase:			rmb	2			; register base
+0434 e2d5                    rambase:			rmb 2			; on-chip RAM base
+0435                         
+0436                         ; saved MCU state
+0437                         mcu_state:
+0438 e2d7                    _mcu_AccA:			rmb 1
+0439 e2d8                    _mcu_AccB:			rmb	1
+0440 e2d9                    _mcu_X:				rmb	2
+0441 e2db                    _mcu_Y:				rmb	2
+0442 e2dd                    _mcu_SP:			rmb	2
+0443 e2df                    _mcu_PC:			rmb	2
+0444 e2e1                    _mcu_flags:			rmb	1
+0445                         
+0446 e2e2 4d 43 50 00 00 00  m_packet:			fcb	'M,'C,'P, 0, 0,0, 0,0	; main packet
+     00 00
+0447 e2ea 4d 43 50 00 00 00  c_packet:			fcb	'M,'C,'P, 0, 0,0, 0,0	; confirmation packet
+     00 00
+0448                         
+0449 e2f2                    packet_data:		rmb	256			; packet data buffer
+0450 e3f2                    packet_data_ptr:	rmb 2			; pointer to packet data
+0451                         
+0452                         ; temp variables
+0453 e3f4                    packet_size_tmp:	rmb 2
+0454 e3f6                    packet_csum_tmp:	rmb	2
+0455 e3f8                    packet_hdr_s:		rmb	2
+0456 e3fa                    packet_hdr_e:		rmb	2
+0457                         
+0458                         ; start of monitor stack.
+0459 ffbe                    	org $FFBE
+0460                         mon_stack:
+0461                         
+0462                         
+0463                         ;*******************************************************************************
+0464                         ;*** interrupt vectors *********************************************************
+0465                         ;*******************************************************************************
+0466 ffc0                    	org $FFC0
+0467 ffc0 e2 d2              res1:				fdb	def_int
+0468 ffc2 e2 d2              res2:				fdb	def_int
+0469 ffc4 e2 d2              res3:				fdb	def_int
+0470 ffc6 e2 d2              res4:				fdb	def_int
+0471 ffc8 e2 d2              res5:				fdb	def_int
+0472 ffca e2 d2              res6:				fdb	def_int
+0473 ffcc e2 d2              res7:				fdb	def_int
+0474 ffce e2 d2              res8:				fdb def_int
+0475 ffd0 e2 d2              res9:				fdb def_int
+0476 ffd2 e2 d2              res10:				fdb def_int
+0477 ffd4 e2 d2              res11:				fdb def_int
+0478 ffd6 e2 d2              v_sci:				fdb	def_int
+0479 ffd8 e2 d2              v_spi_done:			fdb	def_int
+0480 ffda e2 d2              v_pa_inedge:		fdb	def_int
+0481 ffdc e2 d2              v_pa_owrflow:		fdb	def_int
+0482 ffde e2 d2              v_t_ovrflow:		fdb	def_int
+0483 ffe0 e2 d2              v_tic4_tok5:		fdb	def_int
+0484 ffe2 e2 d2              v_tok4:				fdb	def_int
+0485 ffe4 e2 d2              v_tok3:				fdb	def_int
+0486 ffe6 e2 d2              v_tok2:				fdb	def_int
+0487 ffe8 e2 d2              v_tok1:				fdb	def_int
+0488 ffea e2 d2              v_tic3:				fdb	def_int
+0489 ffec e2 d2              v_tic2:				fdb	def_int
+0490 ffee e2 d2              v_tic1:				fdb	def_int
+0491 fff0 e2 d2              v_rti:				fdb	def_int
+0492 fff2 e2 d2              v_irq:				fdb	def_int
+0493 fff4 e2 d2              v_xirq:				fdb	def_int
+0494 fff6 e2 a6              v_softint:			fdb	breakpoint
+0495 fff8 e2 d2              v_ill_opcode:		fdb	def_int
+0496 fffa e2 d2              v_cop_fail:			fdb	def_int
+0497 fffc e2 d2              v_clk_fail:			fdb	def_int
+0498 fffe e2 d2              v_reset:			fdb	def_int
+0499                         
+0500                         end:
+Program + Init Data = 802 bytes
+Error count = 0

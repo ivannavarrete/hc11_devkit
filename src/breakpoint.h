@@ -6,9 +6,9 @@
 #define MAX_BREAKPOINTS		8
 
 struct breakpoint {
-	int num;				/* if num == 0, then breakpoint is clear */
-	unsigned char byte;		/* the original byte */
-	unsigned short addr;	/* address of breakpoint */
+	int num;				// if num == 0, then breakpoint is clear
+	unsigned char byte;		// the original byte
+	unsigned short addr;	// address of breakpoint
 };
 
 
