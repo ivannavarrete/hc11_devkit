@@ -1,19 +1,20 @@
 
-//
-// ui_nc.c
-//
-// This is an ncurses user interface.
-//
-// public routines:
-// 		InitUI() initializes the user interface.
-// 		CleanupUI() closes down the user interface.
-// 		ConfigUI() reconfigures the user interface.
-// 		GetCommand() gets a command structure from the user.
-// 		ShowCommand() shows the result of a command.
-// 		ShowMsg() shows a message.
-// 		GetEnvOpt_UI() gets HC11 setup options from user.
-// 	private routines:
-//
+/*
+ * ui_nc.c
+ *
+ * This is an ncurses user interface.
+ *
+ * public routines:
+ * 		InitUI() initializes the user interface.
+ * 		CleanupUI() closes down the user interface.
+ * 		ConfigUI() reconfigures the user interface.
+ * 		GetCommand() gets a command structure from the user.
+ * 		ShowCommand() shows the result of a command.
+ * 		ShowMsg() shows a message.
+ * 		GetEnvOpt_UI() gets HC11 setup options from user.
+ * 	private routines:
+ *
+ */
 
 
 #include <curses.h>
@@ -23,19 +24,19 @@
 
 #include "ui.h"
 #include "command.h"
-#include "debugger.h"
+#include "monitor.h"
 #include "disasm.h"
 #include "breakpoint.h"
 
 
-// window pointers
+/* window pointers */
 WINDOW *stdscr = NULL;
 WINDOW *reg_w = NULL;
 WINDOW *data_w = NULL;
 WINDOW *code_w = NULL;
 WINDOW *cmd_w = NULL;
 
-// window sizes
+/* window sizes */
 int reg_w_rows;
 int reg_w_cols;
 int data_w_rows;
@@ -46,7 +47,7 @@ int cmd_w_rows;
 int cmd_w_cols;
 int reg_l, data_l, code_l, cmd_l;
 
-// colors, the COLOR_* are just indexes, not the actual future colors
+/* colors, the COLOR_* are just indexes, not the actual future colors */
 short color_main = 1;
 short color_frame = 2;
 short color_bp = 3;
@@ -58,12 +59,12 @@ short f4=COLOR_CYAN, b4=COLOR_BLACK;
 
 
 int InitUI(void) {
-	// init ncurses stuff
+	/* init ncurses stuff */
 	stdscr = initscr();
 	if (stdscr  == NULL)
 		return -1;
 	
-	// init color support
+	/* init color support */
 	if (start_color() == ERR) {
 		CleanupUI();
 		return -1;
@@ -83,7 +84,7 @@ int InitUI(void) {
 	//init_pair(color_change, b4, f4);
 	//init_pair(color_bp, f4, b4);
 
-	// initialize window parameters
+	/* initialize window parameters */
 	if (LINES < 20 || COLS < 80) {
 		CleanupUI();
 		return -1;
@@ -99,7 +100,7 @@ int InitUI(void) {
 	code_l = data_l+data_w_rows+1;
 	cmd_l = code_l+code_w_rows+1;
 	
-	// create windows
+	/* create windows */
 	reg_w = newwin(reg_w_rows, reg_w_cols, reg_l+1, 1);
 	data_w = newwin(data_w_rows, data_w_cols, data_l+1, 1);
 	code_w = newwin(code_w_rows, code_w_cols, code_l+1, 1);
@@ -109,7 +110,7 @@ int InitUI(void) {
 		return -1;
 	}
 
-	// set window colors
+	/* set window colors */
 	wattron(cmd_w, A_DIM);
 	wattron(cmd_w, COLOR_PAIR(color_main));
 	wattron(code_w, A_DIM);
@@ -121,7 +122,7 @@ int InitUI(void) {
 	wattron(stdscr, A_DIM);
 	wattron(stdscr, COLOR_PAIR(color_frame));
 
-	// draw window borders
+	/* draw window borders */
 	border(0, 0, 0, 0, 0, 0, 0, 0);
 	move(data_l, 1);
 	hline(0, COLS-2);
@@ -130,20 +131,20 @@ int InitUI(void) {
 	move(cmd_l, 1);
 	hline(0, COLS-2);
 
-	// write window labels
+	/* write window labels */
 	mvaddstr(reg_l, 4, "[ reg ]");
 	mvaddstr(data_l, 4, "[ data ]");
 	mvaddstr(code_l, 4, "[ code ]");
 	mvaddstr(cmd_l, 4, "[ cmd ]");
 
-	// set window attributes
+	/* set window attributes */
 	scrollok(cmd_w, TRUE);
 	scrollok(code_w, TRUE);
 
-	// put cursor into position
+	/* put cursor into position */
 	wmove(cmd_w, cmd_w_rows-1, 0);
 
-	// refresh screen
+	/* refresh screen */
 	refresh();
 	wnoutrefresh(reg_w);
 	wnoutrefresh(data_w);
@@ -156,17 +157,17 @@ int InitUI(void) {
 
 
 int CleanupUI(void) {
-	// delete windows
+	/* delete windows */
 	delwin(reg_w);
 	delwin(data_w);
 	delwin(code_w);
 	delwin(cmd_w);
 	
-	// clear screen
+	/* clear screen */
 	werase(stdscr);
 	wrefresh(stdscr);
 	
-	// reset terminal
+	/* reset terminal */
 	if (endwin() == ERR);
 		return -1;
 	refresh();
@@ -190,16 +191,16 @@ int GetCommand(struct cmd *cmd) {
 	memset(cmd, 0, sizeof(struct cmd));
 	cmdbuf[COLS] = 0;
 	
-	// get command and convert to lower case
+	/* get command and convert to lower case */
 	wgetnstr(cmd_w, cmdbuf, COLS-3);
 	wrefresh(cmd_w);
 	for (i=0; i<strlen(cmdbuf); i++)
 		cmdbuf[i] = (char)tolower((int)cmdbuf[i]);
-	cmdbuf[i] = ' ';	// insert whitespace or else lex. analyser won't work
+	cmdbuf[i] = ' ';	/* insert whitespace or else lex. analyser won't work */
 	cmdbuf[i+1] = 0;
 
-	// fill command structure
-	// first get the command ...
+	/* fill command structure */
+	/* first get the command ... */
 	cmdptr = Token(cmdptr, &t, TOKEN_COMMAND);
 
 	/*{
@@ -224,19 +225,19 @@ int GetCommand(struct cmd *cmd) {
 	} else
 		cmd->cmd = CMD_SYNTAX_ERR;
 
-	// ... then get command parameters, where necessary
+	/* ... then get command parameters, where necessary */
 	switch (cmd->cmd) {
 		case CMD_GET_DATA:
 		case CMD_GET_CODE:
 		case CMD_EXEC:
 			cmd->addr1 = GetAddr(&cmdptr, &t, cmd, 0);
-			// this is ugly: we don't know how much code/data is needed to
-			// fill the entire code/data window, so we just take a number
-			// and hope it is enough
+			/* this is ugly: we don't know how much code/data is needed to
+			 * fill the entire code/data window, so we just take a number
+			 * and hope it is enough */
 			cmd->addr2 = cmd->addr1 + 100;
 			break;
 		case CMD_SET_CODE:
-			cmdptr = Token(cmdptr, &t, TOKEN_COMMAND);	// get file name
+			cmdptr = Token(cmdptr, &t, TOKEN_COMMAND);	/* get file name */
 			if (cmdptr) {
 				cmd->dsize = strlen(t.lex) + 1;
 				cmd->data = malloc(cmd->dsize);
@@ -286,14 +287,14 @@ int GetCommand(struct cmd *cmd) {
 			break;
 		case CMD_SYNTAX_ERR:
 		default:
-			break;			// only commands with no params end up here
+			break;			/* only commands with no params end up here */
 	}
 
 	return 0;
 }
 
 
-// Takes a request from main program to display command-specific output.
+/* Takes a request from main program to display command-specific output. */
 int ShowCommand(struct cmd *cmd) {
 	switch (cmd->cmd) {
 		case CMD_GET_CODE: ShowCode(cmd); break;
@@ -310,35 +311,35 @@ int ShowCommand(struct cmd *cmd) {
 }
 
 
-// Display disassembly output.
+/* Display disassembly output. */
 int ShowCode(struct cmd *cmd) {
 	struct dis_instr *da_list = (struct dis_instr *)cmd->data;
 	char str[80];
 	int i = 0;
 
-	// clear window
+	/* clear window */
 	werase(code_w);
 
-	// there *should* (I hope) be enough code to fill the code window
+	/* there *should* (I hope) be enough code to fill the code window */
 	while (da_list != NULL && i < code_w_rows) {
-		snprintf(str, 5, "%04X", da_list->addr);		// address
+		snprintf(str, 5, "%04X", da_list->addr);		/* address */
 		mvwaddnstr(code_w, i, 1, str, 6);
 		
-		mvwaddnstr(code_w, i, 8, da_list->mcode, 25);	// machine code
+		mvwaddnstr(code_w, i, 8, da_list->mcode, 25);	/* machine code */
+		
+		mvwaddnstr(code_w, i, 26, da_list->instr, 59);	/* mnemonic */
 
-		mvwaddnstr(code_w, i, 26, da_list->instr, 59);	// mnemonic
-
-		snprintf(str, 4, "%i", da_list->bytes);			// bytes
+		snprintf(str, 4, "%i", da_list->bytes);			/* bytes */
 		mvwaddnstr(code_w, i, 60, str, 5);
 		
-		snprintf(str, 4, "%i", da_list->cycles);		// cycles
+		snprintf(str, 4, "%i", da_list->cycles);		/* cycles */
 		mvwaddnstr(code_w, i, 70, str, 5);
 
 		da_list = da_list->next;
 		i++;
 	}
 
-	// move cursor and refresh window
+	/* move cursor and refresh window */
 	wmove(cmd_w, cmd_w_rows-1, 0);
 	wrefresh(code_w);
 
@@ -346,21 +347,21 @@ int ShowCode(struct cmd *cmd) {
 }
 
 
-// Show data.
+/* Show data. */
 int ShowData(struct cmd *cmd) {
 	unsigned char *data = (unsigned char *)cmd->data;
 	char str[80];
 	int r, c;
 
-	// clear window
+	/* clear window */
 	werase(data_w);
 	
 	for (r=0; r<data_w_rows || r<(cmd->dsize)/0x10; r++) {
-		// address
+		/* address */
 		snprintf(str, 5, "%04X", (cmd->addr1+r*0x10)&0xFFFF);
 		mvwaddnstr(data_w, r, 1, str, 6);
 
-		// hex data
+		/* hex data */
 		if (cmd->mod == CMD_DATA_B) {
 			for (c=0; c<0x10; c++) {
 				snprintf(str, 3, "%02X", data[r*0x10+c]);
@@ -373,7 +374,7 @@ int ShowData(struct cmd *cmd) {
 			}
 		}
 		
-		// ASCII data
+		/* ASCII data */
 		for (c=0; c<0x10; c++) {
 			snprintf(str, 2, "%c", (data[r*0x10+c]>=0x20 && data[r*0x10+c]<='Z')
 					? data[r*0x10+c] : '.');
@@ -381,7 +382,7 @@ int ShowData(struct cmd *cmd) {
 		}
 	}
 
-	// move cursor and refresh window
+	/* move cursor and refresh window */
 	wmove(cmd_w, cmd_w_rows-1, 0);
 	wrefresh(data_w);
 
@@ -392,7 +393,7 @@ int ShowData(struct cmd *cmd) {
 int ShowState(struct cmd *cmd) {
 	//char str[80];
 
-	// clear window
+	/* clear window */
 	werase(reg_w);
 
 	mvwaddstr(reg_w, 0, 1, "AccA: 00");
@@ -403,7 +404,7 @@ int ShowState(struct cmd *cmd) {
 	mvwaddstr(reg_w, 0, 49, "PC: 0000");
 	mvwaddstr(reg_w, 0, 61, "flags: sxhinzvc");
 
-	// move cursor and refresh window
+	/* move cursor and refresh window */
 	wmove(cmd_w, cmd_w_rows-1, 0);
 	wrefresh(reg_w);
 
@@ -422,7 +423,7 @@ int ShowBP(struct cmd *cmd) {
 	waddstr(cmd_w, str);
 	waddstr(cmd_w, "\n");
 
-	// move cursor and refresh window
+	/* move cursor and refresh window */
 	wmove(cmd_w, cmd_w_rows-1, 0);
 	wrefresh(cmd_w);
 
@@ -462,22 +463,22 @@ int GetEnvOpt_UI(struct mcu_env *env) {
 }
 
 
-// Internal routine for use in GetCommand(). Note that t gets changed, so
-// don't call this if t is still needed in GetCommand(). (Or make another
-// variable for this routine.)
-// This routine returns a number on success. On failure it returns 0 AND sets
-// cmd->cmd to CMD_SYNTAX_ERR.
+/* Internal routine for use in GetCommand(). Note that t gets changed, so
+ * don't call this if t is still needed in GetCommand(). (Or make another
+ * variable for this routine.)
+ * This routine returns a number on success. On failure it returns 0 AND sets
+ * cmd->cmd to CMD_SYNTAX_ERR. */
 int GetAddr(char **str, struct token *t, struct cmd *cmd, int opt) {
 	*str = Token(*str, t, TOKEN_COMMAND);
 
-	if (opt) {								// optional
+	if (opt) {								/* optional */
 		if (*str && t->token == TOKEN_NUM)
 			return t->attr;
 		else if (*str)
 			cmd->cmd = CMD_SYNTAX_ERR;
 		else
 			return 0;
-	} else {								// mandatory
+	} else {								/* mandatory */
 		if (t->token == TOKEN_NUM)
 			return t->attr;
 		else

@@ -11,4 +11,4 @@
 int GetEnvOpt_RC(struct mcu_env *env);
 
 
-#endif RC_H
+#endif

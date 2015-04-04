@@ -1,6 +1,6 @@
-//
-// breakpoint.cpp
-//
+/*
+ * breakpoint.c
+ */
 
 
 #include <unistd.h>
@@ -13,11 +13,11 @@
 struct breakpoint bp_list[MAX_BREAKPOINTS] = {};
 
 
-// Set a breakpoint.
+/* Set a breakpoint. */
 int SetBP(unsigned short addr, unsigned char byte) {
 	int i;
 	
-	// find an empty breakpoint slot
+	/* find an empty breakpoint slot */
 	for (i=0; i<MAX_BREAKPOINTS; i++) {
 		if (!bp_list[i].num)
 			break;
@@ -25,7 +25,7 @@ int SetBP(unsigned short addr, unsigned char byte) {
 	if (i == MAX_BREAKPOINTS)
 		return 0;
 	
-	// insert breakpoint into slot
+	/* insert breakpoint into slot */
 	bp_list[i].num = i+1;
 	bp_list[i].byte = byte;
 	bp_list[i].addr = addr;
@@ -34,9 +34,9 @@ int SetBP(unsigned short addr, unsigned char byte) {
 }
 
 
-// Clear a breakpoint.
+/* Clear a breakpoint. */
 int ClearBP(int n) {
-	// if n is valid and there is a breakpoint, clear it
+	/* if n is valid and there is a breakpoint, clear it */
 	if (n > 0 && n <= MAX_BREAKPOINTS) {
 		if (bp_list[n-1].num) {
 			bp_list[n-1].num = 0;
@@ -50,7 +50,7 @@ int ClearBP(int n) {
 }
 
 
-// Get a breakpoint.
+/* Get a breakpoint. */
 struct breakpoint *GetBP(int n) {
 	if (n >= 0 && n < MAX_BREAKPOINTS) {
 		if (bp_list[n].num)
@@ -61,8 +61,8 @@ struct breakpoint *GetBP(int n) {
 }
 
 
-// Return an index into bp_list that contains a matching breakpoint, or -1 if no
-// matching breakpoint was found.
+/* Return an index into bp_list that contains a matching breakpoint, or -1 if no
+ * matching breakpoint was found. */
 int FindBP(unsigned short addr) {
 	int i;
 

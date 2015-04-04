@@ -1,17 +1,20 @@
 
-//
-// lex.cpp
-//
-// This module parses the options or commands from a string. The line variable
-// is only valid if GetEnvOpt_RC() is used before any user commands are issued.
-//
-// public routines:
-//		Token() gets the next token from a string.
-// private routines:
-//		Next() switches to the next transition diagram to follow.
-//		Lookup() checks if a word is reserved.
-//		Debug() prints token info.
-//
+/*
+ * lex.c
+ *
+ * This module parses the options or commands from a string. The line variable
+ * is only valid if GetEnvOpt_RC() is used before any user commands are issued.
+ *
+ * public routines:
+ *		Token() gets the next token from a string.
+ * private routines:
+ * 		GetOpt() get option.
+ * 		GetCmd() get command.
+ *		Next() switches to the next transition diagram to follow.
+ *		Lookup() checks if a word is reserved.
+ *		Debug() prints token info.
+ *
+ */
 
 
 #include <sys/types.h>
@@ -23,14 +26,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cmd.h"
+#include "command.h"
 #include "lex.h"
 
-// By having separate tables for commands and options, we are able to have a
-// the same word for a command and an option. The caller decides which one he
-// wants.
+/* By having separate tables for commands and options, we are able to have a
+ * the same word for a command and an option. The caller decides which one he
+ * wants. */
 
-// array of possible rc file options
+/* array of possible rc file options */
 struct token options[] = {
 	{TOKEN_OPTION, OPT_MODE, 0, "mode"},
 	{TOKEN_OPTION, OPT_TALKER_PAGE, 0, "talker"},
@@ -45,9 +48,9 @@ struct token options[] = {
 	{0, 0, 0, NULL}
 };
 
-// table of (not all) possible commands
+/* table of (not all) possible commands */
 struct token commands[] = {
-	//{TOKEN_COMMAND, CMD_NOP, 0, ""},			// ???
+	//{TOKEN_COMMAND, CMD_NOP, 0, ""},			/* ??? */
 	{TOKEN_COMMAND, CMD_GET_DATA, CMD_DATA_B, "d"},
 	{TOKEN_COMMAND, CMD_GET_DATA, CMD_DATA_B, "db"},
 	{TOKEN_COMMAND, CMD_GET_DATA, CMD_DATA_W, "dw"},
@@ -77,10 +80,10 @@ int line = 1;
 int state, sstate;
 
 
-// These two macros only work within Token() and Next().
+/* These two macros only work within Token() and Next(). */
 #define nextchar()\
 	if (sscanf(str+str_ptr, "%c", &c) == EOF) {\
-		if (t->tok != TOKEN_COMMAND) return NULL;\
+		if (t->token != TOKEN_COMMAND) return NULL;\
 		else return NULL;\
 	}\
 	if (lex_ptr < LEX_LEN-1) lex[lex_ptr++] = c;\
@@ -90,15 +93,15 @@ int state, sstate;
 	lex[--lex_ptr] = 0;\
 	str_ptr--;
 
-// This works only in Token().
+/* This works only in Token(). */
 #define Return(a)\
 	/*Debug(t);*/\
 	return a;
 
 
-// Find the next token in str and fill in the token struct. Return a pointer
-// to the first character after the found token or return NULL and t.token=0
-// if no valid token was found.
+/* Find the next token in str and fill in the token struct. Return a pointer
+ * to the first character after the found token or return NULL and t.token=0
+ * if no valid token was found. */
 char *Token(char *str, struct token *t, int cmd_opt) {
 	char c;
 
@@ -108,10 +111,10 @@ char *Token(char *str, struct token *t, int cmd_opt) {
 	str_ptr = 0;
 	
 	if (cmd_opt == TOKEN_COMMAND) {
-		t->tok = TOKEN_COMMAND;
+		t->token = TOKEN_COMMAND;
 		t->attr = CMD_NOP;
 	} else
-		t->tok = t->attr = 0;
+		t->token = t->attr = 0;
 	t->attr2 = 0;
 	t->lex = lex;
 
@@ -123,7 +126,7 @@ char *Token(char *str, struct token *t, int cmd_opt) {
 			case 1:
 				nextchar();
 
-				// strip blanks
+				/* strip blanks */
 				if (c == ' ' || c == '\t' || c == '\n') {
 					lex[--lex_ptr] = 0;
 					if (c == '\n')
@@ -131,7 +134,7 @@ char *Token(char *str, struct token *t, int cmd_opt) {
 					break;
 				}
 
-				t->tok = t->attr = 0;
+				t->token = t->attr = 0;
 
 				if (isdigit(c)) state = 2;
 				else state = Next();
@@ -157,7 +160,7 @@ char *Token(char *str, struct token *t, int cmd_opt) {
 				break;
 			case 5:
 				ungetchar();
-				t->tok = TOKEN_NUM;
+				t->token = TOKEN_NUM;
 				t->attr = (unsigned int)atoi(lex);
 				Return(str+str_ptr);
 			
@@ -176,8 +179,8 @@ char *Token(char *str, struct token *t, int cmd_opt) {
 			case 8:
 				ungetchar();
 
-				// return TOKEN_WORD, TOKEN_COMMAND, or TOKEN_OPTION
-				t->tok = TOKEN_WORD;
+				/* return TOKEN_WORD, TOKEN_COMMAND, or TOKEN_OPTION */
+				t->token = TOKEN_WORD;
 				if (cmd_opt == TOKEN_COMMAND)
 					Lookup(t, commands);
 				else
@@ -197,7 +200,7 @@ char *Token(char *str, struct token *t, int cmd_opt) {
 				break;
 			case 11:
 				ungetchar();
-				t->tok = TOKEN_COMMENT;
+				t->token = TOKEN_COMMENT;
 				Return(str+str_ptr);
 				
 			default:
@@ -228,12 +231,12 @@ int Next() {
 }
 
 
-// Check is t->lex is in the list of reserved keywords. If so, fill in the rest
-// of the token structure.
+/* Check is t->lex is in the list of reserved keywords. If so, fill in the rest
+ * of the token structure. */
 int Lookup(struct token *t, struct token *table) {
-	while (table->tok) {
+	while (table->token) {
 		if (strcmp(table->lex, t->lex) == 0) {
-			t->tok = table->tok;
+			t->token = table->token;
 			t->attr = table->attr;
 			t->attr2 = table->attr2;
 			return 1;
@@ -241,12 +244,12 @@ int Lookup(struct token *t, struct token *table) {
 			table++;
 	}
 
-	return 0;		// no match found
+	return 0;		/* no match found */
 }
 
 
 void Debug(struct token *t) {
-	switch (t->tok) {
+	switch (t->token) {
 		case TOKEN_NUM: printf("TOKEN_NUM"); break;
 		case TOKEN_WORD: printf("TOKEN_WORD"); break;
 		case TOKEN_COMMENT: printf("TOKEN_COMMENT"); break;
